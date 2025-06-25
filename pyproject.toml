@@ -1,0 +1,17 @@
+[project]
+name = "epub-llm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "bs4>=0.0.2",
+    "ebooklib>=0.19",
+    "faiss-cpu>=1.11.0",
+    "fastapi>=0.115.13",
+    "llama-cpp-python>=0.3.9",
+    "mlx-embeddings>=0.0.3",
+    "mlx-lm>=0.25.2",
+    "requests>=2.32.4",
+    "types-requests>=2.32.4.20250611",
+]

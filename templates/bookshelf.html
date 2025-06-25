@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+	<head>
+		<meta charset="UTF-8" />
+		<title>本棚 - EPUB LLM</title>
+		<link rel="stylesheet" href="/static/style.css" />
+		<style>
+			body {
+				background: #15202b;
+				color: #d9d9d9;
+			}
+			.bookshelf-container {
+				max-width: 900px;
+				margin: 40px auto;
+				background: #192734;
+				border-radius: 16px;
+				box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+				padding: 32px 24px;
+			}
+			.bookshelf-title {
+				font-size: 2rem;
+				font-weight: bold;
+				color: #1da1f2;
+				margin-bottom: 24px;
+				letter-spacing: 1px;
+			}
+			.upload-form {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				margin-bottom: 24px;
+			}
+			.upload-form input[type='file'] {
+				color: #d9d9d9;
+			}
+			.upload-form button {
+				background: #1da1f2;
+				color: #fff;
+				border: none;
+				border-radius: 6px;
+				padding: 8px 18px;
+				font-size: 1rem;
+				cursor: pointer;
+			}
+			.upload-form button:hover {
+				background: #0d8ddb;
+			}
+			.book-list {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 32px 24px;
+				list-style: none;
+				padding: 0;
+				margin: 0;
+			}
+			.book-item {
+				width: 160px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				background: #22303c;
+				border-radius: 12px;
+				padding: 18px 10px 12px 10px;
+				box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+				transition: box-shadow 0.2s;
+				cursor: pointer;
+			}
+			.book-item:hover {
+				box-shadow: 0 4px 16px rgba(29, 161, 242, 0.15);
+			}
+			.book-cover {
+				width: 100px;
+				height: 140px;
+				object-fit: cover;
+				border-radius: 8px;
+				background: #111a22;
+				margin-bottom: 10px;
+				box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+			}
+			.book-icon {
+				width: 100px;
+				height: 140px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 3rem;
+				color: #1da1f2;
+				background: #111a22;
+				border-radius: 8px;
+				margin-bottom: 10px;
+			}
+			.book-title {
+				font-size: 1.1rem;
+				color: #fff;
+				text-align: left;
+				margin-bottom: 4px;
+				min-height: 2.2em;
+			}
+			.book-meta {
+				color: #8899a6;
+				font-size: 0.85rem;
+				text-align: center;
+				word-break: break-all;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="bookshelf-container">
+			<div class="bookshelf-title">本棚</div>
+			<form
+				class="upload-form"
+				id="upload-form"
+				enctype="multipart/form-data">
+				<input
+					type="file"
+					id="epub-file"
+					name="epub_file"
+					accept=".epub"
+					required />
+				<button type="submit">EPUBアップロード</button>
+			</form>
+			<ul class="book-list">
+				{% for book in books %}
+				<li
+					class="book-item"
+					data-book-id="{{ book.id }}"
+					style="cursor: pointer">
+					{% if book.cover %}
+					<img
+						class="book-cover"
+						src="{{ book.cover }}"
+						alt="cover" />
+					{% else %}
+					<div class="book-icon">📘</div>
+					{% endif %}
+					<div class="book-title">{{ book.title }}</div>
+					<div class="book-meta">{{ book.id }}</div>
+					<div style="margin-top: 8px; display: flex; gap: 8px">
+						<button class="delete-btn" data-book-id="{{ book.id }}">
+							削除
+						</button>
+					</div>
+				</li>
+				{% endfor %}
+			</ul>
+		</div>
+		<script>
+			document
+				.getElementById('upload-form')
+				.addEventListener('submit', async function (e) {
+					e.preventDefault()
+					const fileInput = document.getElementById('epub-file')
+					if (!fileInput.files.length) return
+					const formData = new FormData()
+					formData.append('epub_file', fileInput.files[0])
+					const res = await fetch('/upload_epub', {
+						method: 'POST',
+						body: formData,
+					})
+					if (res.ok) {
+						window.location.reload()
+					} else {
+						alert('アップロードに失敗しました')
+					}
+				})
+
+			// 削除ボタン処理
+			for (const btn of document.querySelectorAll('.delete-btn')) {
+				btn.addEventListener('click', async function () {
+					if (!confirm('本当に削除しますか？')) return
+					const bookId = this.getAttribute('data-book-id')
+					const res = await fetch('/delete_epub', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ book_id: bookId }),
+					})
+					if (res.ok) {
+						window.location.reload()
+					} else {
+						alert('削除に失敗しました')
+					}
+				})
+			}
+
+			// 本全体クリックでダウンロード
+			for (const item of document.querySelectorAll('.book-item')) {
+				item.addEventListener('click', function (e) {
+					// 削除ボタン押下時は無視
+					if (e.target.closest('.delete-btn')) return
+					const bookId = this.getAttribute('data-book-id')
+					const a = document.createElement('a')
+					a.href = `/download_epub/${encodeURIComponent(bookId)}`
+					a.download = bookId
+					document.body.appendChild(a)
+					a.click()
+					document.body.removeChild(a)
+				})
+			}
+		</script>
+	</body>
+</html>
