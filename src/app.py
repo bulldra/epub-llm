@@ -9,7 +9,6 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 import mlx_lm
 import numpy as np
 from ebooklib import epub
-from fast_mcp import FastMCPServer
 from fastapi import Body, FastAPI, File, Request, UploadFile
 from fastapi.responses import (
     FileResponse,
@@ -20,6 +19,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastmcp import FastMCPServer
 from mlx_embeddings import load as load_embedding_model
 from mlx_lm.sample_utils import make_sampler
 
@@ -31,7 +31,8 @@ from src.embedding_util import (
     search_similar,
 )
 from src.epub_util import extract_epub_metadata, extract_epub_text, get_epub_cover_path
-from .history_util import save_history, load_history, list_histories
+
+from .history_util import list_histories, load_history, save_history
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")

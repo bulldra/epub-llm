@@ -1,6 +1,6 @@
-import os
 import json
-from typing import List, Dict, Union, Optional
+import os
+from typing import Dict, List, Optional, Union
 
 HISTORY_DIR = os.path.join(os.path.dirname(__file__), "../cache/history")
 
