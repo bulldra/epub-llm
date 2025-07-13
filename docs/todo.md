@@ -1,0 +1,5 @@
+-   [x] .gitignore を拡充
+-   [x] llm や epub rag の部分と UI についてコードを分解し再利用しやすいようにする
+-   [x] fast-mcp で mcp サーバー機能を追加（epubrag 部分のみ）
+-   [x] README.md を整備
+-   [x] flake8 や pylint に従わせて

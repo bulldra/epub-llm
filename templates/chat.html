@@ -4,13 +4,50 @@
 		<meta charset="UTF-8" />
 		<title>EPUB Chat</title>
 		<link rel="stylesheet" href="/static/style.css" />
-		<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+		<script
+			src="/static/vendor/marked.min.js"
+			onerror="loadMarkedFallback()"></script>
+		<script>
+			// marked.jsのフォールバック機能
+			function loadMarkedFallback() {
+				console.warn(
+					'ローカルのmarked.jsの読み込みに失敗しました。CDNから読み込みます。'
+				)
+				const script = document.createElement('script')
+				script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
+				script.onerror = function () {
+					console.error(
+						'marked.jsの読み込みに完全に失敗しました。Markdownレンダリングが利用できません。'
+					)
+				}
+				document.head.appendChild(script)
+			}
+		</script>
 		<script src="/static/chat.js" defer></script>
 	</head>
 	<body>
 		<div id="main-layout">
 			<aside id="sidebar">
-				<h2>履歴</h2>
+				<div class="sidebar-header">
+					<h2>チャット履歴</h2>
+					<button
+						id="new-chat-btn"
+						class="new-chat-btn"
+						title="新しいチャット">
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none">
+							<path
+								d="M12 5V19M5 12H19"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round" />
+						</svg>
+						新規
+					</button>
+				</div>
 				<ul id="history-list"></ul>
 			</aside>
 			<div id="chat-container">
@@ -91,13 +128,19 @@
 							title="閉じる">
 							×
 						</button>
-						<label>本棚から書籍を選択（複数可）:</label>
 						<button
 							id="bookshelf-select-all"
 							class="popup-btn"
 							type="button"
 							title="全選択">
 							全選択
+						</button>
+						<button
+							id="bookshelf-clear-all"
+							class="popup-btn"
+							type="button"
+							title="全解除">
+							全解除
 						</button>
 						<div id="bookshelf" class="bookshelf-grid"></div>
 						<div

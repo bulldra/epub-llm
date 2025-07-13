@@ -1,17 +1,44 @@
-# Copilot Instructions
+# Copilot 指示書
 
-## General Instructions
+## 一般的な指示
 
--   Use Python 3.12.
--   Python type hints are required.
--   Code formatting is required (black).
--   88 character line length.
--   Use `uv` for package management.
--   List & Dict type are preferred over `list` and `dict`.
--   Use `typing` for type hints.
--   Use `Optional` for nullable fields.
--   Use `Union` for fields that can have multiple types.
--   Use lazy % formatting for logging messages.
--   Use `f-strings` for string formatting.
--   Use `is None` for null checks.
--   Use not user general exception Exception
+-   Python 3.12 を使用してください。
+-   Python の型ヒントが必須です。
+-   コードフォーマットが必須です（black）。
+-   88 文字の行長制限。
+-   リンティングには Flake8 を使用してください。
+-   コードフォーマットには ruff を使用してください。
+-   型チェックには`mypy`を使用してください。
+-   コードスタイルチェックには`pylint`を使用してください。
+-   パッケージ管理には`uv`を使用してください。
+-   `list`や`dict`よりも`List`と`Dict`型を優先してください。
+-   型ヒントには`typing`を使用してください。
+-   null 許容フィールドには`Optional`を使用してください。
+-   複数の型を持つフィールドには`Union`を使用してください。
+-   ログメッセージには遅延%フォーマットを使用してください。
+-   文字列フォーマットには`f-strings`を使用してください。
+-   null チェックには`is None`を使用してください。
+-   一般的な例外 Exception は使用しないでください。
+-   エージェントからの確認は最小限にして、適切な修正を実行してください。
+-   ログを出力する際は、`logging`モジュールを使用してください。
+-   コメントは不要です。
+-   各フェーズでログを出力してください。
+-   list, dict, set, tuple の型ヒントには、`typing`モジュールの型を使用せず、`list`, `dict`, `set`, `tuple` を直接使用してください。
+-   pylint, flake8, mypy, ruff のエラーや警告は無視せず、必ず修正してください。
+
+## t-wada 流 TDD (Test-Driven Development) の実装指針
+
+-   テストファーストの原則を厳守してください。
+-   Red-Green-Refactor サイクルを遵守してください。
+-   まず失敗するテストを書き、次に最小限のコードで通し、最後にリファクタリングしてください。
+-   テストは可読性と保守性を重視してください。
+-   テストケースは具体的で明確な名前を付けてください。
+-   モックやスタブは必要最小限に留めてください。
+-   統合テストよりも単体テストを優先してください。
+-   テストの実行速度を重視してください。
+-   テストコードも本番コードと同じ品質基準を適用してください。
+
+## Claude Code 使用量監視
+
+-   Claude Code での作業完了後は必ず `npx ccusage@latest daily` を実行してコストを確認してください。
+-   使用量が予想以上の場合は作業方法を見直してください。

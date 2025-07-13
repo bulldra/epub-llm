@@ -20,11 +20,36 @@ body {
 	gap: 12px;
 	z-index: 300;
 }
+.sidebar-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
 #sidebar h2 {
 	font-size: 1.2em;
-	margin: 0 0 12px 0;
+	margin: 0;
 	font-weight: 600;
 	color: #1da1f2;
+}
+
+.new-chat-btn {
+	background: #1da1f2;
+	border: none;
+	color: white;
+	padding: 6px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 0.85em;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	transition: background 0.2s;
+}
+
+.new-chat-btn:hover {
+	background: #0d8bd9;
 }
 #history-list {
 	list-style: none;
@@ -33,20 +58,77 @@ body {
 	flex: 1;
 	overflow-y: auto;
 }
-#history-list li {
-	padding: 8px 10px;
+.history-item {
+	padding: 10px 12px;
 	margin-bottom: 6px;
 	background: #192734;
 	border-radius: 6px;
 	cursor: pointer;
 	transition: background 0.2s;
-	font-size: 1.02em;
-	word-break: break-all;
+	position: relative;
 }
-#history-list li.selected,
-#history-list li:hover {
+
+.history-item:hover {
+	background: #253544;
+}
+
+.history-item.selected {
 	background: #1da1f2;
 	color: #fff;
+}
+
+.history-title {
+	font-size: 0.9em;
+	font-weight: 500;
+	margin-bottom: 4px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.history-meta {
+	font-size: 0.75em;
+	color: #8899a6;
+	margin-bottom: 6px;
+}
+
+.history-item.selected .history-meta {
+	color: #e1f5fe;
+}
+
+.history-delete-btn {
+	background: #e74c3c;
+	border: none;
+	color: white;
+	padding: 3px 8px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.7em;
+	position: absolute;
+	right: 8px;
+	bottom: 6px;
+	opacity: 0;
+	transition: opacity 0.2s;
+}
+
+.history-item:hover .history-delete-btn {
+	opacity: 1;
+}
+
+.history-delete-btn:hover {
+	background: #c0392b;
+}
+
+.history-empty,
+.history-error {
+	padding: 20px;
+	text-align: center;
+	color: #8899a6;
+	font-size: 0.9em;
+}
+
+.history-error {
+	color: #e74c3c;
 }
 #chat-container {
 	display: flex;
@@ -286,6 +368,7 @@ button:hover {
 	align-items: center;
 	transition: box-shadow 0.2s, border 0.2s;
 	border: 2px solid transparent;
+	min-height: 170px; /* 高さを確保してタイトル表示領域を十分にする */
 }
 .bookshelf-item.selected {
 	border: 2px solid #1da1f2;
@@ -300,10 +383,21 @@ button:hover {
 	margin-bottom: 6px;
 }
 .bookshelf-title {
-	font-size: 13px;
+	font-size: 12px;
 	color: #d9d9d9;
-	text-align: left !important;
-	word-break: break-all;
+	text-align: left;
+	word-break: break-word;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: -webkit-box !important;
+	-webkit-line-clamp: 3 !important;
+	-webkit-box-orient: vertical !important;
+	white-space: normal !important;
+	width: 80px;
+	line-height: 1.4;
+	height: auto;
+	min-height: 50px;
+	margin-top: 8px;
 }
 .top-menu {
 	width: 100%;
@@ -458,23 +552,36 @@ h6 {
 #status-area {
 	background: #f8f9fa;
 	color: #222;
-	border-radius: 8px;
-	max-width: 100%;
+	border-radius: 6px;
+	width: calc(100% - 16px);
 	word-break: break-word;
 	white-space: pre-wrap;
-	min-height: 1.8em;
-	padding: 10px 16px;
-	margin: 8px 0 12px 0;
-	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-	font-size: 1.05em;
-	font-weight: 500;
-	position: static;
+	overflow-wrap: break-word;
+	word-wrap: break-word;
+	height: 80px !important;
+	min-height: 80px !important;
+	max-height: 80px !important;
+	padding: 6px 12px;
+	margin: 4px 8px 8px 8px;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+	font-size: 0.8em;
+	font-weight: 400;
+	position: absolute;
+	top: 0;
+	left: 0;
 	z-index: 201;
 	border: 1px solid #e0e0e0;
 	display: block;
+	overflow-y: auto;
+	overflow-x: hidden;
+	box-sizing: border-box;
+	flex: none !important;
+	flex-grow: 0 !important;
+	flex-shrink: 0 !important;
+	flex-basis: auto !important;
 }
 #bottom-bar-container {
-	position: static;
+	position: relative;
 	left: 0;
 	right: 0;
 	bottom: 0;
@@ -483,9 +590,10 @@ h6 {
 	z-index: 100;
 	display: flex;
 	flex-direction: column;
-	gap: 0; /* gapを0に */
+	gap: 0;
 	background: none;
-	padding: 0 8px 8px 8px; /* 下だけ少し余白 */
+	padding: 92px 8px 8px 8px; /* 上部にステータスエリア分のスペースを確保 */
+	align-items: stretch;
 }
 .selected-books-list {
 	margin-left: 0px;
@@ -520,24 +628,27 @@ h6 {
 	pointer-events: auto;
 }
 .selected-book-chip {
-	display: inline-flex;
-	align-items: center;
+	display: inline-block;
 	background: #e3f2fd;
 	color: #1976d2;
 	border-radius: 6px;
-	padding: 2px 8px 2px 8px;
+	padding: 2px 25px 2px 8px;
 	margin: 0 2px;
 	font-size: 0.97rem;
 	font-weight: 500;
 	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 	position: relative;
+	max-width: 150px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: middle;
 }
 .selected-book-chip .remove-book-btn {
 	background: none;
 	border: none;
 	color: #888;
 	font-size: 1.1em;
-	margin-left: 4px;
 	cursor: pointer;
 	border-radius: 50%;
 	width: 1.2em;
@@ -547,6 +658,10 @@ h6 {
 	justify-content: center;
 	transition: background 0.15s;
 	padding: 0;
+	position: absolute;
+	right: 2px;
+	top: 50%;
+	transform: translateY(-50%);
 }
 .selected-book-chip .remove-book-btn:hover {
 	background: #b3e5fc;
@@ -575,4 +690,28 @@ h6 {
 	gap: 6px;
 	align-items: center;
 	pointer-events: auto;
+}
+
+/* エラーメッセージのスタイル */
+.ai-msg.error-msg {
+	border-left: 4px solid #ff6b6b;
+	background-color: #fff5f5;
+	color: #d63031;
+}
+
+.loading-time.error {
+	color: #ff6b6b;
+	font-style: italic;
+}
+
+.history-error {
+	color: #ff6b6b;
+	text-align: center;
+	padding: 20px;
+	font-style: italic;
+}
+
+/* ネットワークエラー時の本棚表示 */
+.no-books {
+	color: #ff6b6b;
 }

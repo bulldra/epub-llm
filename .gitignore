@@ -8,6 +8,13 @@ post/
 epub/
 cache/
 
+# EPUB-LLM Project Specific
+.server.pid
+*.pid
+log/
+static/cache/
+static/vendor/
+
 # C extensions
 *.so
 
@@ -197,3 +204,5 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+.claude

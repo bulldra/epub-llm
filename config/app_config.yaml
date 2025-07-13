@@ -1,0 +1,58 @@
+# EPUB-LLM Application Configuration
+
+# LLM設定
+llm:
+    # 開発モード設定
+    dev_mode: true # true: モデル無効化、false: モデル有効
+
+    # LLMモデル設定
+    model_name: 'lmstudio-community/Llama-4-Scout-17B-16E-MLX-text-4bit'
+
+    # 埋め込みモデル設定
+    embedding_model_name: 'mlx-community/multilingual-e5-large-mlx'
+
+    # 生成設定
+    generation:
+        max_tokens: 4096
+        temperature: 0.7
+        top_p: 0.9
+        repetition_penalty: 1.1
+
+# サーバー設定
+server:
+    host: '0.0.0.0'
+    port: 8000
+
+# ディレクトリ設定
+directories:
+    epub_dir: 'epub'
+    cache_dir: 'cache'
+    log_dir: 'log'
+    config_dir: 'config'
+
+# ログ設定
+logging:
+    level: 'INFO'
+    format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    date_format: '%Y-%m-%d %H:%M:%S'
+    file_encoding: 'utf-8'
+
+    # ログファイル設定
+    files:
+        app_log: 'epub-llm.log'
+        server_log: 'server.log'
+
+# キャッシュ設定
+cache:
+    embeddings_cache: true
+    text_cache: true
+    cover_cache: true
+
+# 環境変数オーバーライド設定
+env_overrides:
+    # 環境変数名 -> 設定キーパスのマッピング
+    DEV_MODE: 'llm.dev_mode'
+    LLM_MODEL_NAME: 'llm.model_name'
+    EMBED_MODEL_NAME: 'llm.embedding_model_name'
+    SERVER_HOST: 'server.host'
+    SERVER_PORT: 'server.port'
