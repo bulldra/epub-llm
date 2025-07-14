@@ -235,7 +235,34 @@ pre-commit run --all-files
 - `POST /search_books` - マルチ書籍検索
 - `POST /smart_search` - スマート検索
 
-### MCP Tools
+### MCP Server
+詳細な設定方法は [MCP Server 設定ガイド](docs/mcp-server-setup.md) を参照
+
+#### MCP Server 起動
+```bash
+# MCP Server 単独起動
+python start_mcp.py
+
+# テストクライアント実行
+python examples/test_mcp_client.py
+```
+
+#### Claude Desktop 設定
+```json
+{
+  "mcpServers": {
+    "epub-llm": {
+      "command": "python",
+      "args": ["/path/to/epub-llm/start_mcp.py"],
+      "env": {
+        "PYTHONPATH": "/path/to/epub-llm"
+      }
+    }
+  }
+}
+```
+
+#### 利用可能なMCP Tools
 - `list_epub_books()` - 書籍一覧
 - `get_epub_metadata(book_id)` - メタデータ
 - `search_epub_content(book_id, query, top_k)` - 検索

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "epub-llm": {
+      "command": "python3",
+      "args": ["/Users/bulldra/Develop/epub-llm/start_mcp_stable.py"],
+      "env": {
+        "PYTHONPATH": "/Users/bulldra/Develop/epub-llm",
+        "DEV_MODE": "true",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
