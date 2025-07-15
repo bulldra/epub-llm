@@ -1,11 +1,10 @@
 """
 SampleRAGSystemのテストケース
 """
+# pylint: disable=protected-access
 
-import json
 import os
 import tempfile
-import unittest
 from unittest.mock import MagicMock, patch
 
 import numpy as np

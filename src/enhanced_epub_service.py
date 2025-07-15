@@ -5,6 +5,7 @@ Enhanced EPUB service with smart RAG capabilities.
 import asyncio
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from src.common_util import delete_book_files, get_book_list
@@ -17,19 +18,29 @@ from src.history_util import (
     load_session_data,
     save_history,
 )
-from src.query_expansion_util import AdaptiveRAGStrategy, QueryExpander
+from src.query_expansion_util import QueryExpander, determine_search_strategy
 from src.rerank_util import ContextCompressor, QueryBasedReRanker
 from src.smart_rag_util import SmartRAGManager
 
 
+@dataclass
 class SearchComponents:
     """Container for search-related components."""
 
-    def __init__(self, llm_manager: Any):
-        self.query_expander = QueryExpander(llm_manager)
-        self.reranker = QueryBasedReRanker()
-        self.context_compressor = ContextCompressor(max_context_length=8000)
-        self.adaptive_strategy = AdaptiveRAGStrategy()
+    query_expander: Any
+    reranker: Any
+    context_compressor: Any
+    adaptive_strategy: Any
+
+    @classmethod
+    def create(cls, llm_manager: Any) -> "SearchComponents":
+        """Create SearchComponents with initialized components."""
+        return cls(
+            query_expander=QueryExpander(llm_manager),
+            reranker=QueryBasedReRanker(),
+            context_compressor=ContextCompressor(max_context_length=8000),
+            adaptive_strategy=determine_search_strategy,
+        )
 
 
 class EnhancedEPUBService:
@@ -48,7 +59,7 @@ class EnhancedEPUBService:
         self.logger = logging.getLogger(__name__)
 
         # Initialize search components
-        self.search = SearchComponents(llm_manager)
+        self.search = SearchComponents.create(llm_manager)
 
     def get_bookshelf(self) -> list[dict[str, Any]]:
         """Get list of available EPUB books."""
@@ -162,6 +173,7 @@ class EnhancedEPUBService:
 
         # Generate final context
         final_results = reranked_results[: strategy["top_k"]]
+        context: str
         if strategy["context_compression"]:
             self.search.context_compressor.max_context_length = strategy[
                 "max_context_length"
@@ -245,13 +257,15 @@ class EnhancedEPUBService:
     ) -> list[dict[str, Any]]:
         """Search within a single book using smart RAG."""
         # Use hybrid search for single book
-        results = self.smart_rag_manager.hybrid_search(query, [book_id], top_k)
+        results = self.smart_rag_manager.hybrid_search(query, [book_id], top_k=top_k)
 
         # Add book metadata
         enhanced_results = self._add_book_metadata(results)
 
         # Re-rank for single book search
-        reranked_results = self.search.reranker.rerank_results(query, enhanced_results)
+        reranked_results: list[dict[str, Any]] = self.search.reranker.rerank_results(
+            query, enhanced_results
+        )
 
         return reranked_results
 

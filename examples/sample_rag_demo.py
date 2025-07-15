@@ -42,18 +42,18 @@ def create_mock_models():
 
             if isinstance(texts, str):
                 texts = [texts]
-            elif hasattr(texts, '__getitem__') and 'input_ids' in texts:
+            elif hasattr(texts, "__getitem__") and "input_ids" in texts:
                 # HuggingFace形式の入力の場合
-                texts = texts['input_ids']
-            
-            batch_size = len(texts) if hasattr(texts, '__len__') else 1
+                texts = texts["input_ids"]
+
+            batch_size = len(texts) if hasattr(texts, "__len__") else 1
             embeddings = np.random.rand(batch_size, self.embed_dim)
-            
+
             # MLXモデル互換の戻り値
             class MockOutput:
                 def __init__(self, embeds):
                     self.text_embeds = embeds
-            
+
             return MockOutput(embeddings)
 
     class MockTokenizer:
@@ -66,8 +66,8 @@ def create_mock_models():
         def batch_encode_plus(self, texts, **kwargs):
             """HuggingFaceトークナイザー互換のメソッド"""
             return {
-                'input_ids': [list(range(len(text.split()))) for text in texts],
-                'attention_mask': [[1] * len(text.split()) for text in texts]
+                "input_ids": [list(range(len(text.split()))) for text in texts],
+                "attention_mask": [[1] * len(text.split()) for text in texts],
             }
 
     return MockModel(), MockTokenizer()
@@ -125,9 +125,7 @@ def demonstrate_rag_system():
         logger.info(f"\n--- クエリ {i}: {query} ---")
 
         # 意味検索
-        semantic_results = rag_system.search(
-            query, top_k=2, use_hybrid=False
-        )
+        semantic_results = rag_system.search(query, top_k=2, use_hybrid=False)
         logger.info("意味検索結果:")
         for j, result in enumerate(semantic_results[:2], 1):
             logger.info(f"  {j}. スコア: {result['score']:.3f}")
@@ -174,7 +172,9 @@ def interactive_mode():
 
     print("\n=== サンプルRAGシステム - インタラクティブモード ===")
     print("質問を入力してください（'quit'で終了）")
-    print("利用可能なトピック:", ", ".join(rag_system.get_statistics()["corpus_topics"]))
+    print(
+        "利用可能なトピック:", ", ".join(rag_system.get_statistics()["corpus_topics"])
+    )
 
     while True:
         try:

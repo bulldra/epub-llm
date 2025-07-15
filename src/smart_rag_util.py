@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from rank_bm25 import BM25Okapi
@@ -22,21 +23,36 @@ from src.embedding_util import (
 from src.epub_util import extract_epub_metadata, extract_epub_text
 
 
+@dataclass
+class SearchParams:
+    """Parameters for hybrid search operations."""
+
+    query: str
+    book_ids: list[str]
+    top_k: int = 10
+    semantic_weight: float = 0.7
+    keyword_weight: float = 0.3
+
+
+@dataclass
 class EmbeddingComponents:
     """Container for embedding-related components."""
 
-    def __init__(self, embed_model: Any, embed_tokenizer: Any) -> None:
-        self.model = embed_model
-        self.tokenizer = embed_tokenizer
-        self.model_pair = ModelPair(model=embed_model, tokenizer=embed_tokenizer)
+    model: Any
+    tokenizer: Any
+    model_pair: Any = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Initialize model_pair after dataclass creation."""
+        self.model_pair = ModelPair(model=self.model, tokenizer=self.tokenizer)
 
 
+@dataclass
 class SearchIndexes:
     """Container for search indexes."""
 
-    def __init__(self) -> None:
-        self.bm25_indexes: dict[str, BM25Okapi] = {}
-        self.tokenized_texts: dict[str, list[list[str]]] = {}
+    bm25_indexes: dict[str, BM25Okapi] = field(default_factory=dict)
+    tokenized_texts: dict[str, list[list[str]]] = field(default_factory=dict)
 
 
 class SmartRAGManager:
@@ -214,10 +230,111 @@ class SmartRAGManager:
 
         return chunks
 
+    def _perform_semantic_search(
+        self, query: str, book_id: str, top_k: int
+    ) -> list[tuple[int, float, str]]:
+        """Perform semantic search for a single book."""
+        base_path = os.path.join(self.cache_dir, book_id)
+        embeddings, texts = load_embeddings(base_path)
+
+        index = build_faiss_index(embeddings)
+        return search_similar(
+            query=query,
+            model_pair=self.embedding.model_pair,
+            index=index,
+            texts=texts,
+            top_k=top_k * 2,  # Get more candidates for re-ranking
+        )
+
+    def _perform_keyword_search(
+        self, query: str, book_id: str, top_k: int
+    ) -> list[tuple[int, float]]:
+        """Perform BM25 keyword search for a single book."""
+        if book_id not in self.indexes.bm25_indexes:
+            self._load_bm25_index(book_id)
+
+        keyword_scores = []
+        if book_id in self.indexes.bm25_indexes:
+            query_tokens = self._tokenize_text(query)
+            bm25_scores = self.indexes.bm25_indexes[book_id].get_scores(query_tokens)
+            keyword_scores = list(enumerate(bm25_scores))
+            keyword_scores.sort(key=lambda x: x[1], reverse=True)
+
+        return keyword_scores[: top_k * 2]
+
+    def _combine_search_scores(
+        self,
+        semantic_results: list[tuple[int, float, str]],
+        keyword_scores: list[tuple[int, float]],
+        texts: list[str],
+        book_id: str,
+        semantic_weight: float,
+        keyword_weight: float,
+    ) -> list[dict[str, Any]]:
+        """Combine semantic and keyword search scores."""
+        combined_scores = {}
+
+        # Add semantic scores
+        for idx, score, text in semantic_results:
+            if idx < len(texts):
+                combined_scores[idx] = {
+                    "semantic_score": float(score),
+                    "keyword_score": 0.0,
+                    "text": text,
+                    "book_id": book_id,
+                }
+
+        # Add keyword scores
+        for idx, score in keyword_scores:
+            if idx in combined_scores:
+                combined_scores[idx]["keyword_score"] = float(score)
+            elif idx < len(texts):
+                combined_scores[idx] = {
+                    "semantic_score": 0.0,
+                    "keyword_score": float(score),
+                    "text": texts[idx],
+                    "book_id": book_id,
+                }
+
+        # Calculate combined scores
+        results = []
+        for idx, data in combined_scores.items():
+            semantic_score = data["semantic_score"]
+            keyword_score_val = data["keyword_score"]
+            semantic_norm = (
+                float(semantic_score)
+                if isinstance(semantic_score, int | float | str)
+                else 0.0
+            )
+            keyword_score = (
+                float(keyword_score_val)
+                if isinstance(keyword_score_val, int | float | str)
+                else 0.0
+            )
+            keyword_norm = min(keyword_score / 10.0, 1.0) if keyword_score > 0 else 0.0
+
+            combined_score = (
+                semantic_weight * semantic_norm + keyword_weight * keyword_norm
+            )
+
+            results.append(
+                {
+                    "book_id": book_id,
+                    "index": idx,
+                    "combined_score": combined_score,
+                    "semantic_score": data["semantic_score"],
+                    "keyword_score": data["keyword_score"],
+                    "text": data["text"],
+                }
+            )
+
+        return results
+
     def hybrid_search(
         self,
         query: str,
         book_ids: list[str],
+        *,
         top_k: int = 10,
         semantic_weight: float = 0.7,
         keyword_weight: float = 0.3,
@@ -232,91 +349,24 @@ class SmartRAGManager:
             if not self.ensure_embeddings_exist(book_id):
                 continue
 
-            # Load embeddings
+            # Perform searches
+            semantic_results = self._perform_semantic_search(query, book_id, top_k)
+            keyword_scores = self._perform_keyword_search(query, book_id, top_k)
+
+            # Load texts for score combination
             base_path = os.path.join(self.cache_dir, book_id)
-            embeddings, texts = load_embeddings(base_path)
+            _, texts = load_embeddings(base_path)
 
-            # Semantic search using embeddings
-            index = build_faiss_index(embeddings)
-            semantic_results = search_similar(
-                query=query,
-                model_pair=self.embedding.model_pair,
-                index=index,
-                texts=texts,
-                top_k=top_k * 2,  # Get more candidates for re-ranking
+            # Combine scores
+            book_results = self._combine_search_scores(
+                semantic_results,
+                keyword_scores,
+                texts,
+                book_id,
+                semantic_weight,
+                keyword_weight,
             )
-
-            # Keyword search using BM25
-            if book_id not in self.indexes.bm25_indexes:
-                self._load_bm25_index(book_id)
-
-            keyword_scores = []
-            if book_id in self.indexes.bm25_indexes:
-                query_tokens = self._tokenize_text(query)
-                bm25_scores = self.indexes.bm25_indexes[book_id].get_scores(
-                    query_tokens
-                )
-                keyword_scores = list(enumerate(bm25_scores))
-                keyword_scores.sort(key=lambda x: x[1], reverse=True)
-
-            # Combine scores using weighted average
-            combined_scores = {}
-
-            # Add semantic scores
-            for idx, score, text in semantic_results:
-                if idx < len(texts):
-                    combined_scores[idx] = {
-                        "semantic_score": float(score),
-                        "keyword_score": 0.0,
-                        "text": text,
-                        "book_id": book_id,
-                    }
-
-            # Add keyword scores
-            for idx, score in keyword_scores[: top_k * 2]:
-                if idx in combined_scores:
-                    combined_scores[idx]["keyword_score"] = float(score)
-                elif idx < len(texts):
-                    combined_scores[idx] = {
-                        "semantic_score": 0.0,
-                        "keyword_score": float(score),
-                        "text": texts[idx],
-                        "book_id": book_id,
-                    }
-
-            # Calculate combined scores
-            for idx, data in combined_scores.items():
-                # Normalize scores (simple min-max normalization)
-                semantic_score = data["semantic_score"]
-                keyword_score_val = data["keyword_score"]
-                semantic_norm = (
-                    float(semantic_score)
-                    if isinstance(semantic_score, int | float | str)
-                    else 0.0
-                )
-                keyword_score = (
-                    float(keyword_score_val)
-                    if isinstance(keyword_score_val, int | float | str)
-                    else 0.0
-                )
-                keyword_norm = (
-                    min(keyword_score / 10.0, 1.0) if keyword_score > 0 else 0.0
-                )
-
-                combined_score = (
-                    semantic_weight * semantic_norm + keyword_weight * keyword_norm
-                )
-
-                all_results.append(
-                    {
-                        "book_id": book_id,
-                        "index": idx,
-                        "combined_score": combined_score,
-                        "semantic_score": data["semantic_score"],
-                        "keyword_score": data["keyword_score"],
-                        "text": data["text"],
-                    }
-                )
+            all_results.extend(book_results)
 
         # Sort by combined score and return top results
         all_results.sort(
@@ -333,7 +383,7 @@ class SmartRAGManager:
         self, query: str, book_ids: list[str], top_k: int = 10
     ) -> list[dict[str, Any]]:
         """Smart search with metadata and book title information."""
-        results = self.hybrid_search(query, book_ids, top_k)
+        results = self.hybrid_search(query, book_ids, top_k=top_k)
 
         # Add book metadata
         enhanced_results = []
@@ -402,6 +452,7 @@ class SmartRAGManager:
         self,
         query: str,
         book_ids: list[str],
+        *,
         top_k: int = 10,
         semantic_weight: float = 0.7,
         keyword_weight: float = 0.3,
@@ -515,7 +566,7 @@ class SmartRAGManager:
         )
         return all_results[:top_k]
 
-    def generate_smart_context(
+    def generate_smart_context(  # pylint: disable=too-many-locals
         self, query: str, book_ids: list[str], top_k: int = 10
     ) -> str:
         """Generate context with smart filtering and compression."""

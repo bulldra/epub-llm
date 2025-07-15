@@ -5,7 +5,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 from rank_bm25 import BM25Okapi
@@ -41,15 +41,15 @@ class SampleRAGSystem:  # pylint: disable=too-many-instance-attributes
 
         # サンプルコーパス
         self.corpus_data = self._load_sample_corpus()
-        self.text_chunks: List[str] = []
-        self.embeddings: np.ndarray = None
+        self.text_chunks: list[str] = []
+        self.embeddings: np.ndarray | None = None
         self.bm25_index: BM25Okapi = None
         self.faiss_index = None
 
         # 設定読み込み（デフォルト値で初期化）
         self.config = self._get_default_config()
 
-    def _load_sample_corpus(self) -> List[Dict[str, str]]:
+    def _load_sample_corpus(self) -> list[dict[str, str]]:
         """サンプルコーパスデータを読み込み"""
         return [
             {
@@ -163,7 +163,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
             },
         ]
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """デフォルト設定を取得"""
         return {
             "chunking": {
@@ -265,7 +265,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
         use_hybrid: bool = True,
         semantic_weight: float = 0.7,
         keyword_weight: float = 0.3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         ハイブリッド検索を実行
 
@@ -295,7 +295,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
             and len(self.text_chunks) > 0
         )
 
-    def _semantic_search(self, query: str, top_k: int) -> List[Dict[str, Any]]:
+    def _semantic_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
         """意味検索を実行"""
         results = search_similar(
             query=query,
@@ -320,7 +320,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
 
     def _hybrid_search(
         self, query: str, top_k: int, semantic_weight: float, keyword_weight: float
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """ハイブリッド検索を実行"""
         # 意味検索
         semantic_results = self._semantic_search(query, top_k * 2)
@@ -329,7 +329,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
         keyword_results = self._keyword_search(query, top_k * 2)
 
         # スコアを正規化して結合
-        combined_scores = {}
+        combined_scores: dict[int, float] = {}
 
         # 意味検索スコアを正規化
         if semantic_results:
@@ -370,7 +370,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
 
         return final_results
 
-    def _keyword_search(self, query: str, top_k: int) -> List[Dict[str, Any]]:
+    def _keyword_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
         """キーワード検索を実行"""
         query_tokens = query.lower().split()
         scores = self.bm25_index.get_scores(query_tokens)
@@ -467,7 +467,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
             bool: 読み込み成功の可否
         """
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 system_data = json.load(f)
 
             self.text_chunks = system_data["text_chunks"]
@@ -490,7 +490,7 @@ CSRF（Cross-Site Request Forgery）、セッションハイジャックがあ�
             self.logger.error("システム状態の読み込みに失敗: %s", e)
             return False
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """システム統計情報を取得"""
         return {
             "total_chunks": len(self.text_chunks),

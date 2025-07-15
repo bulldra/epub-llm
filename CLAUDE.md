@@ -19,6 +19,7 @@ EPUB-LLM プロジェクトは、EPUB ファイルの読み込み、テキスト
 -   t-wada 流 TDD（Test-Driven Development）を採用
 -   コード修正したら mypy black pylint ruff を実行して全ての警告を解消すること
 -   import-outside-toplevel を禁止
+-   pylint: disable を使用しない
 
 ### テスト実行コマンド
 

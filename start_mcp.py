@@ -6,11 +6,16 @@
 最適化された起動方法を提供します。
 """
 
+import importlib
 import logging
 import os
 import signal
 import sys
 from pathlib import Path
+from typing import Any
+
+import fastmcp
+import uvicorn
 
 # プロジェクトルートをPythonパスに追加
 project_root = Path(__file__).parent.absolute()
@@ -32,26 +37,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def signal_handler(signum, frame):
+def signal_handler(signum: int, frame: Any) -> None:  # pylint: disable=unused-argument
     """シグナルハンドラ"""
-    logger.info(f"シグナル {signum} を受信。MCP Server を終了中...")
+    logger.info("シグナル %d を受信。MCP Server を終了中...", signum)
     sys.exit(0)
 
 
-def ensure_dependencies():
+def ensure_dependencies() -> bool:
     """依存関係の確認"""
     try:
-        import fastmcp
-        import uvicorn
+        # Use variables to avoid unused-variable warnings
+        _ = fastmcp
+        _ = uvicorn
 
         logger.info("依存関係確認: OK")
         return True
-    except ImportError as e:
-        logger.error(f"依存関係エラー: {e}")
+    except NameError as e:
+        logger.error("依存関係エラー: %s", e)
         return False
 
 
-def start_mcp_server():
+def start_mcp_server() -> bool:
     """MCP Server を起動"""
     try:
         # 依存関係確認
@@ -60,15 +66,16 @@ def start_mcp_server():
 
         logger.info("EPUB-LLM MCP Server を起動中...")
 
-        # MCPアプリケーションをインポート
-        from src.mcp_server import mcp_app
-
         # サーバー情報をログ出力
         logger.info("=" * 50)
         logger.info("EPUB-LLM MCP Server")
-        logger.info(f"プロジェクトルート: {project_root}")
-        logger.info(f"PythonPath: {sys.path[0]}")
+        logger.info("プロジェクトルート: %s", project_root)
+        logger.info("PythonPath: %s", sys.path[0])
         logger.info("=" * 50)
+
+        # MCPアプリケーションをインポート（動的インポート）
+        mcp_module = importlib.import_module("src.mcp_server")
+        mcp_app = mcp_module.mcp_app
 
         # FastMCP の実行
         mcp_app.run()
@@ -78,12 +85,12 @@ def start_mcp_server():
     except KeyboardInterrupt:
         logger.info("ユーザーによる中断")
         return False
-    except Exception as e:
-        logger.error(f"MCP Server 起動エラー: {e}", exc_info=True)
+    except (ImportError, AttributeError, OSError, RuntimeError) as e:
+        logger.error("MCP Server 起動エラー: %s", e, exc_info=True)
         return False
 
 
-def main():
+def main() -> None:
     """メイン関数"""
     # シグナルハンドラ登録
     signal.signal(signal.SIGINT, signal_handler)

@@ -76,6 +76,7 @@ class QueryBasedReRanker:
         self,
         query: str,
         results: list[dict[str, Any]],
+        *,
         diversity_weight: float = 0.2,
         quality_weight: float = 0.1,
         overlap_weight: float = 0.3,
@@ -166,6 +167,44 @@ class ContextCompressor:
 
         return "。".join(top_sentences) + "。" if top_sentences else text[:500]
 
+    def _group_results_by_book(
+        self, results: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Group results by book for better organization."""
+        book_groups: dict[str, list[dict[str, Any]]] = {}
+        for result in results:
+            book_title = result.get("book_title", result.get("book_id", "Unknown"))
+            if book_title not in book_groups:
+                book_groups[book_title] = []
+            book_groups[book_title].append(result)
+        return book_groups
+
+    def _compress_book_section(
+        self,
+        book_title: str,
+        book_results: list[dict[str, Any]],
+        query: str,
+        preserve_book_info: bool,
+    ) -> str:
+        """Compress a single book's results into a section."""
+        book_parts = []
+
+        for result in book_results:
+            text = result.get("text", "")
+            score = result.get("score", result.get("combined_score", 0))
+
+            # Extract key sentences
+            compressed_text = self._extract_key_sentences(text, query)
+
+            if preserve_book_info:
+                book_parts.append(f"{compressed_text} (関連度: {score:.2f})")
+            else:
+                book_parts.append(compressed_text)
+
+        if preserve_book_info:
+            return f"**{book_title}**\n" + "\n\n".join(book_parts)
+        return "\n\n".join(book_parts)
+
     def compress_context(
         self, results: list[dict[str, Any]], query: str, preserve_book_info: bool = True
     ) -> str:
@@ -177,48 +216,24 @@ class ContextCompressor:
         current_length = 0
 
         # Group by book for better organization
-        book_groups: dict[str, list[dict[str, Any]]] = {}
-        for result in results:
-            book_title = result.get("book_title", result.get("book_id", "Unknown"))
-            if book_title not in book_groups:
-                book_groups[book_title] = []
-            book_groups[book_title].append(result)
+        book_groups = self._group_results_by_book(results)
 
         for book_title, book_results in book_groups.items():
             if current_length >= self.max_context_length:
                 break
 
-            book_parts = []
-            for result in book_results[:3]:  # Limit results per book
-                if current_length >= self.max_context_length:
-                    break
+            # Limit results per book
+            limited_results = book_results[:3]
+            book_section = self._compress_book_section(
+                book_title, limited_results, query, preserve_book_info
+            )
 
-                text = result.get("text", "")
+            # Check if adding this section would exceed limit
+            if current_length + len(book_section) > self.max_context_length:
+                break
 
-                # Compress text if too long
-                if len(text) > 400:
-                    compressed_text = self._extract_key_sentences(text, query)
-                else:
-                    compressed_text = text
-
-                # Add relevance indicator
-                score = result.get("rerank_score", result.get("score", 0))
-                if score > 0.7:
-                    relevance = "高関連"
-                elif score > 0.4:
-                    relevance = "中関連"
-                else:
-                    relevance = "低関連"
-
-                formatted_text = f"[{relevance}] {compressed_text}"
-                book_parts.append(formatted_text)
-                current_length += len(formatted_text)
-
-            if book_parts and preserve_book_info:
-                book_section = f"**{book_title}**\n" + "\n\n".join(book_parts)
-                compressed_parts.append(book_section)
-            elif book_parts:
-                compressed_parts.extend(book_parts)
+            compressed_parts.append(book_section)
+            current_length += len(book_section)
 
         final_result = "\n\n---\n\n".join(compressed_parts)
 

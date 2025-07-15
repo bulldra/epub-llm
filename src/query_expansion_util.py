@@ -66,9 +66,9 @@ class QueryExpander:
         synonym_queries = self._generate_synonyms(original_query)
         if synonym_queries:
             self.logger.info(
-                "[QueryExpander] Generated %d synonym queries: %s", 
+                "[QueryExpander] Generated %d synonym queries: %s",
                 len(synonym_queries),
-                ", ".join(synonym_queries[:3])
+                ", ".join(synonym_queries[:3]),
             )
 
         # Extract entities and concepts
@@ -94,7 +94,7 @@ class QueryExpander:
         self.logger.info(
             "[QueryExpander] Generated %d search queries: %s",
             len(search_queries),
-            "; ".join(search_queries)
+            "; ".join(search_queries),
         )
 
         return expansion_result
@@ -125,7 +125,7 @@ class QueryExpander:
                 self.logger.info("[QueryExpander] LLM generated expansion: %s", result)
                 return result
 
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError) as e:
             self.logger.error("[QueryExpander] LLM expansion failed: %s", e)
 
         return ""
@@ -191,71 +191,64 @@ class QueryExpander:
         return intent_analysis
 
 
-class AdaptiveRAGStrategy:
-    """Adaptive RAG strategy based on query analysis."""
+def determine_search_strategy(query_analysis: dict[str, Any]) -> dict[str, Any]:
+    """Determine optimal search strategy based on query analysis."""
+    strategy = {
+        "top_k": 10,
+        "semantic_weight": 0.7,
+        "keyword_weight": 0.3,
+        "diversity_weight": 0.2,
+        "use_reranking": True,
+        "context_compression": True,
+        "max_context_length": 8000,
+    }
 
-    def __init__(self) -> None:
-        self.logger = logging.getLogger(__name__)
+    query_type = query_analysis.get("query_type", "general")
+    specificity = query_analysis.get("specificity", "medium")
 
-    def determine_search_strategy(
-        self, query_analysis: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Determine optimal search strategy based on query analysis."""
-        strategy = {
-            "top_k": 10,
-            "semantic_weight": 0.7,
-            "keyword_weight": 0.3,
-            "diversity_weight": 0.2,
-            "use_reranking": True,
-            "context_compression": True,
-            "max_context_length": 8000,
-        }
+    # Adjust strategy based on query type
+    if query_type == "factual":
+        # For factual queries, prioritize keyword matching
+        strategy["semantic_weight"] = 0.5
+        strategy["keyword_weight"] = 0.5
+        strategy["top_k"] = 5
+        strategy["diversity_weight"] = 0.1
 
-        query_type = query_analysis.get("query_type", "general")
-        specificity = query_analysis.get("specificity", "medium")
+    elif query_type == "procedural":
+        # For procedural queries, need comprehensive context
+        strategy["top_k"] = 15
+        strategy["max_context_length"] = 10000
+        strategy["diversity_weight"] = 0.3
 
-        # Adjust strategy based on query type
-        if query_type == "factual":
-            # For factual queries, prioritize keyword matching
-            strategy["semantic_weight"] = 0.5
-            strategy["keyword_weight"] = 0.5
-            strategy["top_k"] = 5
-            strategy["diversity_weight"] = 0.1
+    elif query_type == "explanatory":
+        # For explanatory queries, prioritize semantic understanding
+        strategy["semantic_weight"] = 0.8
+        strategy["keyword_weight"] = 0.2
+        strategy["diversity_weight"] = 0.2
 
-        elif query_type == "procedural":
-            # For procedural queries, need comprehensive context
-            strategy["top_k"] = 15
-            strategy["max_context_length"] = 10000
-            strategy["diversity_weight"] = 0.3
+    # Adjust based on specificity
+    if specificity == "high":
+        # High specificity: fewer but more relevant results
+        strategy["top_k"] = min(strategy["top_k"], 8)
+        strategy["keyword_weight"] += 0.1
+        strategy["semantic_weight"] -= 0.1
 
-        elif query_type == "explanatory":
-            # For explanatory queries, prioritize semantic understanding
-            strategy["semantic_weight"] = 0.8
-            strategy["keyword_weight"] = 0.2
-            strategy["diversity_weight"] = 0.2
+    elif specificity == "low":
+        # Low specificity: more diverse results
+        strategy["top_k"] = max(strategy["top_k"], 12)
+        strategy["diversity_weight"] += 0.1
 
-        # Adjust based on specificity
-        if specificity == "high":
-            # High specificity: fewer but more relevant results
-            strategy["top_k"] = min(strategy["top_k"], 8)
-            strategy["keyword_weight"] += 0.1
-            strategy["semantic_weight"] -= 0.1
+    # Special handling for comparison queries
+    if query_analysis.get("comparison", False):
+        strategy["diversity_weight"] = 0.4  # High diversity for comparisons
+        strategy["top_k"] = 15
 
-        elif specificity == "low":
-            # Low specificity: more diverse results
-            strategy["top_k"] = max(strategy["top_k"], 12)
-            strategy["diversity_weight"] += 0.1
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[Strategy] Determined strategy - top_k: %d, semantic: %.1f, keyword: %.1f",
+        strategy["top_k"],
+        strategy["semantic_weight"],
+        strategy["keyword_weight"],
+    )
 
-        # Special handling for comparison queries
-        if query_analysis.get("comparison", False):
-            strategy["diversity_weight"] = 0.4  # High diversity for comparisons
-            strategy["top_k"] = 15
-
-        self.logger.info(
-            "[Strategy] Determined strategy - top_k: %d, semantic: %.1f, keyword: %.1f",
-            strategy["top_k"],
-            strategy["semantic_weight"],
-            strategy["keyword_weight"],
-        )
-
-        return strategy
+    return strategy

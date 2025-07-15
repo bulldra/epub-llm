@@ -165,7 +165,7 @@ class RAGManager:
 
         return context, results
 
-    def search_context_with_metadata(
+    def search_context_with_metadata(  # pylint: disable=too-many-locals
         self, query: str, book_ids: list[str], top_k: int = 10
     ) -> list[dict[str, Any]]:
         """Search for relevant context and return structured metadata."""

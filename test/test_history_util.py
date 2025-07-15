@@ -47,7 +47,7 @@ class TestHistoryUtil:
             session_id = "test_session"
             history = [
                 {"role": "user", "content": "Hello"},
-                {"role": "assistant", "content": "Hi there!"}
+                {"role": "assistant", "content": "Hi there!"},
             ]
             book_ids = ["book1", "book2"]
 
@@ -109,12 +109,20 @@ class TestHistoryUtil:
             # Create test data in new format
             test_data = {
                 "messages": [
-                    {"role": "user", "content": "Hello", "timestamp": "2024-01-01T10:00:00"},
-                    {"role": "assistant", "content": "Hi!", "timestamp": "2024-01-01T10:01:00"}
+                    {
+                        "role": "user",
+                        "content": "Hello",
+                        "timestamp": "2024-01-01T10:00:00",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Hi!",
+                        "timestamp": "2024-01-01T10:01:00",
+                    },
                 ],
                 "book_ids": ["book1"],
                 "created_at": "2024-01-01T10:00:00",
-                "updated_at": "2024-01-01T10:01:00"
+                "updated_at": "2024-01-01T10:01:00",
             }
 
             file_path = os.path.join(history_dir, f"{session_id}.json")
@@ -136,7 +144,7 @@ class TestHistoryUtil:
             # Create test data in legacy format (direct list)
             test_data = [
                 {"role": "user", "content": "Hello"},
-                {"role": "assistant", "content": "Hi!"}
+                {"role": "assistant", "content": "Hi!"},
             ]
 
             file_path = os.path.join(history_dir, f"{session_id}.json")
@@ -186,7 +194,7 @@ class TestHistoryUtil:
                 "messages": [{"role": "user", "content": "Hello"}],
                 "book_ids": ["book1"],
                 "created_at": "2024-01-01T10:00:00",
-                "updated_at": "2024-01-01T10:01:00"
+                "updated_at": "2024-01-01T10:01:00",
             }
 
             file_path = os.path.join(history_dir, f"{session_id}.json")
@@ -234,7 +242,8 @@ class TestHistoryUtil:
                     json.dump([], f)
 
             # Create a non-JSON file (should be ignored)
-            with open(os.path.join(history_dir, "not_json.txt"), "w") as f:
+            file_path = os.path.join(history_dir, "not_json.txt")
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write("test")
 
             with patch("src.history_util.HISTORY_DIR", history_dir):
@@ -291,12 +300,20 @@ class TestHistoryUtil:
             # Create test data
             test_data = {
                 "messages": [
-                    {"role": "user", "content": "Hello world", "timestamp": "2024-01-01T10:00:00"},
-                    {"role": "assistant", "content": "Hi!", "timestamp": "2024-01-01T10:01:00"}
+                    {
+                        "role": "user",
+                        "content": "Hello world",
+                        "timestamp": "2024-01-01T10:00:00",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Hi!",
+                        "timestamp": "2024-01-01T10:01:00",
+                    },
                 ],
                 "book_ids": ["book1"],
                 "created_at": "2024-01-01T10:00:00",
-                "updated_at": "2024-01-01T10:01:00"
+                "updated_at": "2024-01-01T10:01:00",
             }
 
             file_path = os.path.join(history_dir, f"{session_id}.json")
@@ -321,11 +338,15 @@ class TestHistoryUtil:
             long_message = "A" * 150  # 150 characters
             test_data = {
                 "messages": [
-                    {"role": "user", "content": long_message, "timestamp": "2024-01-01T10:00:00"}
+                    {
+                        "role": "user",
+                        "content": long_message,
+                        "timestamp": "2024-01-01T10:00:00",
+                    }
                 ],
                 "book_ids": [],
                 "created_at": "2024-01-01T10:00:00",
-                "updated_at": "2024-01-01T10:01:00"
+                "updated_at": "2024-01-01T10:01:00",
             }
 
             file_path = os.path.join(history_dir, f"{session_id}.json")
@@ -357,11 +378,15 @@ class TestHistoryUtil:
 
             test_data = {
                 "messages": [
-                    {"role": "assistant", "content": "Hello!", "timestamp": "2024-01-01T10:00:00"}
+                    {
+                        "role": "assistant",
+                        "content": "Hello!",
+                        "timestamp": "2024-01-01T10:00:00",
+                    }
                 ],
                 "book_ids": [],
                 "created_at": "2024-01-01T10:00:00",
-                "updated_at": "2024-01-01T10:01:00"
+                "updated_at": "2024-01-01T10:01:00",
             }
 
             file_path = os.path.join(history_dir, f"{session_id}.json")

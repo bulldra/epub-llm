@@ -40,12 +40,19 @@ class TestEpubUtil:
             mock_book = MagicMock()
             mock_item = MagicMock()
             mock_item.get_type.return_value = 1  # ebooklib.ITEM_DOCUMENT
-            mock_item.get_content.return_value = b"<html><body><h1>Title</h1><p>Content</p></body></html>"
+            mock_item.get_content.return_value = (
+                b"<html><body><h1>Title</h1><p>Content</p></body></html>"
+            )
             mock_book.get_items.return_value = [mock_item]
 
-            with patch("src.epub_util.epub.read_epub", return_value=mock_book), \
-                 patch("src.epub_util.extract_epub_metadata", return_value={"title": "Test", "author": "Author", "year": "2024"}), \
-                 patch("src.epub_util.ebooklib.ITEM_DOCUMENT", 1):
+            with (
+                patch("src.epub_util.epub.read_epub", return_value=mock_book),
+                patch(
+                    "src.epub_util.extract_epub_metadata",
+                    return_value={"title": "Test", "author": "Author", "year": "2024"},
+                ),
+                patch("src.epub_util.ebooklib.ITEM_DOCUMENT", 1),
+            ):
                 result = extract_epub_text(epub_path, cache_path)
 
                 assert "# Test" in result
@@ -62,7 +69,7 @@ class TestEpubUtil:
             mock_book.get_metadata.side_effect = [
                 [("Test Title", {})],  # title
                 [("Test Author", {})],  # creator
-                [("2024", {})]  # date
+                [("2024", {})],  # date
             ]
 
             with patch("src.epub_util.epub.read_epub", return_value=mock_book):
@@ -77,7 +84,9 @@ class TestEpubUtil:
         with tempfile.TemporaryDirectory() as temp_dir:
             epub_path = os.path.join(temp_dir, "nonexistent.epub")
 
-            with patch("src.epub_util.epub.read_epub", side_effect=OSError("File not found")):
+            with patch(
+                "src.epub_util.epub.read_epub", side_effect=OSError("File not found")
+            ):
                 result = extract_epub_metadata(epub_path)
 
                 assert result == {"title": "", "author": "", "year": ""}
@@ -90,7 +99,7 @@ class TestEpubUtil:
             cover_path = os.path.join(cache_dir, "test.epub.cover.jpg")
 
             # Create a mock cover file
-            with open(cover_path, "w") as f:
+            with open(cover_path, "w", encoding="utf-8") as f:
                 f.write("mock cover")
 
             result = get_epub_cover_path(epub_path, cache_dir)
@@ -103,7 +112,9 @@ class TestEpubUtil:
             cache_dir = temp_dir
             expected_cover_path = os.path.join(cache_dir, "test.epub.cover.jpg")
 
-            with patch("src.epub_util.extract_and_save_cover", return_value=expected_cover_path):
+            with patch(
+                "src.epub_util.extract_and_save_cover", return_value=expected_cover_path
+            ):
                 result = get_epub_cover_path(epub_path, cache_dir)
                 assert result == expected_cover_path
 
@@ -113,7 +124,10 @@ class TestEpubUtil:
             epub_path = os.path.join(temp_dir, "test.epub")
             cache_dir = temp_dir
 
-            with patch("src.epub_util.extract_and_save_cover", side_effect=OSError("Extraction failed")):
+            with patch(
+                "src.epub_util.extract_and_save_cover",
+                side_effect=OSError("Extraction failed"),
+            ):
                 result = get_epub_cover_path(epub_path, cache_dir)
                 assert result is None
 
@@ -135,9 +149,11 @@ class TestEpubUtil:
             mock_image = MagicMock()
             mock_image.convert.return_value = mock_image
 
-            with patch("src.epub_util.epub.read_epub", return_value=mock_book), \
-                 patch("src.epub_util.Image.open", return_value=mock_image), \
-                 patch("os.makedirs"):
+            with (
+                patch("src.epub_util.epub.read_epub", return_value=mock_book),
+                patch("src.epub_util.Image.open", return_value=mock_image),
+                patch("os.makedirs"),
+            ):
                 result = extract_and_save_cover(epub_path, cover_path)
 
                 assert result == cover_path
@@ -171,7 +187,9 @@ class TestEpubUtil:
             mock_cover_item.get_content.return_value = b"fake image data"
             mock_book.get_item_with_id.return_value = mock_cover_item
 
-            with patch("src.epub_util.epub.read_epub", return_value=mock_book), \
-                 patch("src.epub_util.Image.open", side_effect=OSError("Image error")):
+            with (
+                patch("src.epub_util.epub.read_epub", return_value=mock_book),
+                patch("src.epub_util.Image.open", side_effect=OSError("Image error")),
+            ):
                 result = extract_and_save_cover(epub_path, cover_path)
                 assert result is None

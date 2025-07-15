@@ -36,15 +36,15 @@ class MCPTester:
             params = {}
 
         url = f"{self.mcp_url}/tools/{tool_name}"
-        
+
         try:
             response = requests.post(
                 url,
                 json=params,
                 headers={"Content-Type": "application/json"},
-                timeout=30
+                timeout=30,
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 print(f"✅ {tool_name}: 成功")
@@ -53,7 +53,7 @@ class MCPTester:
                 print(f"❌ {tool_name}: エラー {response.status_code}")
                 print(f"   レスポンス: {response.text}")
                 return None
-                
+
         except requests.exceptions.RequestException as e:
             print(f"❌ {tool_name}: 接続エラー {e}")
             return None
@@ -62,14 +62,14 @@ class MCPTester:
         """書籍一覧テスト"""
         print("\n📚 書籍一覧テスト")
         result = self.call_tool("list_epub_books")
-        
+
         if result:
             print(f"   書籍数: {len(result)}")
             for i, book in enumerate(result[:3]):  # 最初の3冊のみ表示
                 title = book.get("title", "不明")
                 book_id = book.get("id", "不明")
                 print(f"   {i+1}. {title} (ID: {book_id})")
-        
+
         return result if result else []
 
     def test_metadata(self, books: list[dict[str, Any]]) -> None:
@@ -80,10 +80,10 @@ class MCPTester:
 
         print("\n📖 メタデータテスト")
         book_id = books[0].get("id")
-        
+
         if book_id:
             result = self.call_tool("get_epub_metadata", {"book_id": book_id})
-            
+
             if result:
                 title = result.get("title", "不明")
                 author = result.get("author", "不明")
@@ -98,15 +98,14 @@ class MCPTester:
 
         print("\n🔍 検索テスト")
         book_id = books[0].get("id")
-        
+
         if book_id:
             # 単一書籍検索
-            result = self.call_tool("search_epub_content", {
-                "book_id": book_id,
-                "query": "Python",
-                "top_k": 3
-            })
-            
+            result = self.call_tool(
+                "search_epub_content",
+                {"book_id": book_id, "query": "Python", "top_k": 3},
+            )
+
             if result:
                 print(f"   検索結果数: {len(result)}")
                 for i, item in enumerate(result[:2]):  # 最初の2件のみ表示
@@ -124,14 +123,13 @@ class MCPTester:
         print("\n🎯 コンテキスト検索テスト")
         book_ids = [book.get("id") for book in books[:2]]  # 最初の2冊
         book_ids = [bid for bid in book_ids if bid]  # None を除外
-        
+
         if book_ids:
-            result = self.call_tool("get_context_for_books", {
-                "book_ids": book_ids,
-                "query": "機械学習",
-                "top_k": 5
-            })
-            
+            result = self.call_tool(
+                "get_context_for_books",
+                {"book_ids": book_ids, "query": "機械学習", "top_k": 5},
+            )
+
             if result:
                 context_length = len(result)
                 preview = result[:200] + "..." if len(result) > 200 else result
@@ -147,14 +145,13 @@ class MCPTester:
         print("\n🧠 スマート検索テスト")
         book_ids = [book.get("id") for book in books[:2]]
         book_ids = [bid for bid in book_ids if bid]
-        
+
         if book_ids:
-            result = self.call_tool("smart_search_books", {
-                "book_ids": book_ids,
-                "query": "データ分析",
-                "top_k": 3
-            })
-            
+            result = self.call_tool(
+                "smart_search_books",
+                {"book_ids": book_ids, "query": "データ分析", "top_k": 3},
+            )
+
             if result:
                 result_length = len(result)
                 preview = result[:200] + "..." if len(result) > 200 else result
@@ -164,20 +161,18 @@ class MCPTester:
     def test_chat_history(self) -> None:
         """チャット履歴テスト"""
         print("\n💬 チャット履歴テスト")
-        
+
         # 履歴一覧取得
         histories = self.call_tool("get_chat_histories")
-        
+
         if histories:
             print(f"   履歴数: {len(histories)}")
-            
+
             # 最初の履歴の詳細取得
             if histories:
                 session_id = histories[0]
-                history = self.call_tool("get_chat_history", {
-                    "session_id": session_id
-                })
-                
+                history = self.call_tool("get_chat_history", {"session_id": session_id})
+
                 if history:
                     print(f"   セッション {session_id}: {len(history)}メッセージ")
         else:
@@ -187,22 +182,22 @@ class MCPTester:
         """全テスト実行"""
         print("🧪 MCP Server 機能テスト開始")
         print("=" * 50)
-        
+
         # ヘルスチェック
         if not self.test_health_check():
             print("❌ MCP Server に接続できません")
             return
-        
+
         # 書籍一覧取得
         books = self.test_list_books()
-        
+
         # 各種テスト実行
         self.test_metadata(books)
         self.test_search(books)
         self.test_context_search(books)
         self.test_smart_search(books)
         self.test_chat_history()
-        
+
         print("\n" + "=" * 50)
         print("🎉 テスト完了")
 
@@ -213,11 +208,11 @@ def main():
     base_url = "http://localhost:8001"
     if len(sys.argv) > 1:
         base_url = sys.argv[1]
-    
+
     print(f"🌐 MCP Server URL: {base_url}")
-    
+
     tester = MCPTester(base_url)
-    
+
     try:
         tester.run_all_tests()
     except KeyboardInterrupt:

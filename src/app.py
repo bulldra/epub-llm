@@ -71,25 +71,27 @@ logging.basicConfig(
     ],
 )
 
+logger = logging.getLogger(__name__)
+
 # Model initialization from config
 DEV_MODE = config.get("llm.dev_mode", False)
 
 if DEV_MODE:
     MODEL, TOKENIZER = None, None
-    print("🚀 Running in development mode - models disabled")
+    logger.info("Running in development mode - models disabled")
 else:
     MODEL_NAME = config.get("llm.model_name")
     MODEL, TOKENIZER = load_mlx_model(MODEL_NAME)
-    print(f"🤖 Loaded LLM model: {MODEL_NAME}")
+    logger.info("Loaded LLM model: %s", MODEL_NAME)
 
 # Embedding model setup
 EMBED_MODEL_NAME = config.get("llm.embedding_model_name")
 if DEV_MODE:
     EMBED_MODEL, EMBED_TOKENIZER = None, None
-    print("🔍 Development mode - embedding model disabled")
+    logger.info("Development mode - embedding model disabled")
 else:
     EMBED_MODEL, EMBED_TOKENIZER = load_embedding_model(EMBED_MODEL_NAME)
-    print(f"🔍 Loaded embedding model: {EMBED_MODEL_NAME}")
+    logger.info("Loaded embedding model: %s", EMBED_MODEL_NAME)
 
 # Initialize managers
 rag_manager = RAGManager(EMBED_MODEL, EMBED_TOKENIZER, CACHE_DIR, EPUB_DIR)

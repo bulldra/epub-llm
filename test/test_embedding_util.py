@@ -21,7 +21,7 @@ from src.embedding_util import (
 )
 
 
-class TestModelPair:
+class TestModelPair:  # pylint: disable=too-few-public-methods
     """Test cases for ModelPair dataclass."""
 
     def test_model_pair_creation(self):
@@ -47,7 +47,7 @@ class TestEmbeddingUtil:
         # Mock tokenizer output
         mock_tokenizer.batch_encode_plus.return_value = {
             "input_ids": "mock_ids",
-            "attention_mask": "mock_mask"
+            "attention_mask": "mock_mask",
         }
 
         # Mock model output - need to return separate arrays for each batch
@@ -57,7 +57,9 @@ class TestEmbeddingUtil:
         mock_output2.text_embeds = np.array([[4.0, 5.0, 6.0]])
         mock_model.side_effect = [mock_output1, mock_output2]
 
-        result = create_embeddings_from_texts(texts, mock_model, mock_tokenizer, batch_size=1)
+        result = create_embeddings_from_texts(
+            texts, mock_model, mock_tokenizer, batch_size=1
+        )
 
         assert result.shape == (2, 3)
         assert np.array_equal(result, np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
@@ -116,7 +118,7 @@ class TestEmbeddingUtil:
         # Mock tokenizer output
         mock_tokenizer.batch_encode_plus.return_value = {
             "input_ids": "mock_ids",
-            "attention_mask": "mock_mask"
+            "attention_mask": "mock_mask",
         }
 
         # Mock model output for query
@@ -148,14 +150,16 @@ class TestEmbeddingUtil:
         with patch("src.embedding_util.search_similar") as mock_search:
             mock_search.return_value = [
                 (0, 0.1, "First result"),
-                (1, 0.2, "Second result")
+                (1, 0.2, "Second result"),
             ]
 
             embeddings = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
             texts = ["text1", "text2"]
             index = build_faiss_index(embeddings)
 
-            result = create_context_from_query("query", model_pair, index, texts, top_k=2)
+            result = create_context_from_query(
+                "query", model_pair, index, texts, top_k=2
+            )
 
             assert result == "First result\n\n------\n\nSecond result"
 
@@ -167,8 +171,10 @@ class TestEmbeddingUtil:
             mock_model = MagicMock()
             mock_tokenizer = MagicMock()
 
-            with patch("src.embedding_util.create_embeddings_from_texts") as mock_create, \
-                 patch("src.embedding_util.save_embeddings") as mock_save:
+            with (
+                patch("src.embedding_util.create_embeddings_from_texts") as mock_create,
+                patch("src.embedding_util.save_embeddings") as mock_save,
+            ):
                 mock_embeddings = np.array([[1.0, 2.0], [3.0, 4.0]])
                 mock_create.return_value = mock_embeddings
 
@@ -178,7 +184,7 @@ class TestEmbeddingUtil:
                     texts=texts,
                     model=mock_model,
                     tokenizer=mock_tokenizer,
-                    batch_size=32
+                    batch_size=32,
                 )
                 mock_save.assert_called_once_with(mock_embeddings, texts, out_path)
 

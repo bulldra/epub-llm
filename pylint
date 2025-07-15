@@ -4,23 +4,26 @@ pylint用スラッシュコマンド
 Usage: /pylint [options]
 """
 
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
-def main():
+
+def main() -> None:
+    """pylint用スラッシュコマンドのメイン関数"""
     # プロジェクトルートディレクトリに移動
     script_dir = Path(__file__).parent
-    
+
     # quality_check.py --tool pylintを実行
     cmd = [sys.executable, "quality_check.py", "--tool", "pylint"] + sys.argv[1:]
-    
+
     try:
-        result = subprocess.run(cmd, cwd=script_dir)
+        result = subprocess.run(cmd, cwd=script_dir, check=False)
         sys.exit(result.returncode)
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"Error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
