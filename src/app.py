@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,7 +26,9 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from src.common_util import get_book_title_from_metadata
 from src.config_manager import AppConfig
+from src.epub_util import stream_epub_markdown
 from src.history_util import delete_history as history_delete
 from src.history_util import (
     get_all_sessions,
@@ -35,7 +37,6 @@ from src.history_util import (
     save_history,
 )
 from src.mlx_faiss_integration import MLXFAISSIntegration
-from src.common_util import get_book_title_from_metadata
 from src.simple_epub_service import SimpleEPUBService
 
 # Load configuration
@@ -208,6 +209,32 @@ def get_book_content(book_id: str) -> dict[str, Any]:
         return {"content": content}
     except (OSError, ValueError, RuntimeError) as exc:
         return {"error": str(exc)}
+
+
+@app.get("/book/{book_id}/markdown_stream")
+def stream_book_markdown(book_id: str) -> StreamingResponse:
+    """Stream book markdown as NDJSON chunks."""
+    if not _is_safe_book_id(book_id):
+        return StreamingResponse(
+            (_ndjson_bytes({"error": "Invalid book_id"}),),
+            media_type="application/x-ndjson",
+        )
+    epub_path = os.path.join(EPUB_DIR, book_id)
+    if not os.path.exists(epub_path):
+        return StreamingResponse(
+            (_ndjson_bytes({"error": "Book not found"}),),
+            media_type="application/x-ndjson",
+        )
+    cache_txt = os.path.join(CACHE_DIR, book_id.replace(".epub", ".txt"))
+
+    def generate() -> Iterator[bytes]:
+        try:
+            for chunk in stream_epub_markdown(epub_path, cache_txt):
+                yield _ndjson_bytes(chunk)
+        except (OSError, ValueError, RuntimeError) as exc:
+            yield _ndjson_bytes({"error": str(exc)})
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
 @app.post("/book/{book_id}/search", response_class=JSONResponse)
@@ -408,7 +435,7 @@ def _format_context_snippets(snippets: list[dict[str, Any]]) -> str:
     meta_cache: dict[str, dict[str, Any]] = {}
     # Lazy import to avoid import cycles on startup
     try:
-        from src.epub_util import extract_epub_metadata  # type: ignore
+        from src.epub_util import extract_epub_metadata
     except Exception:  # noqa: BLE001
         extract_epub_metadata = None  # type: ignore[assignment]
 
@@ -624,7 +651,7 @@ def _build_evidence(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     # Lazy import of metadata util to avoid cyclic imports during startup
     try:
-        from src.epub_util import extract_epub_metadata  # type: ignore
+        from src.epub_util import extract_epub_metadata
     except Exception:  # noqa: BLE001
         extract_epub_metadata = None  # type: ignore[assignment]
 
@@ -643,7 +670,7 @@ def _build_evidence(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not md:
             # Best-effort: fallback to title only via common util
             try:
-                from src.common_util import get_book_title_from_metadata as _title  # type: ignore
+                from src.common_util import get_book_title_from_metadata as _title
 
                 md = {"title": _title(EPUB_DIR, fname)}
             except Exception:  # noqa: BLE001
@@ -1106,7 +1133,7 @@ def get_book_chunks(book_id: str) -> dict[str, Any]:
 
         # Fallback: reconstruct chunks from markdown cache using the same logic
         try:
-            from src.mlx_embedding_service import _chunk_markdown as chunk_md  # type: ignore
+            from src.mlx_embedding_service import _chunk_markdown as chunk_md
         except Exception:  # noqa: BLE001
             chunk_md = None  # type: ignore[assignment]
 
