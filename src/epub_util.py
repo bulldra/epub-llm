@@ -4,16 +4,31 @@ This module provides functions for extracting text and metadata from EPUB files,
 including text extraction, cover image processing, and metadata parsing.
 """
 
+import base64
 import io
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, cast
 
 import ebooklib
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from ebooklib import ITEM_COVER, epub
-from PIL import Image, UnidentifiedImageError
+
+try:  # Pillow is optional for tests
+    from PIL import Image, UnidentifiedImageError
+except ModuleNotFoundError:  # pragma: no cover - fallback when Pillow missing
+
+    class Image:  # type: ignore[no-redef]
+        """Minimal placeholder when Pillow is unavailable."""
+
+        @staticmethod
+        def open(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 - passthrough
+            raise OSError("Pillow not installed")
+
+    UnidentifiedImageError = Exception
+
 
 if TYPE_CHECKING:
     from ebooklib.epub import EpubBook
@@ -66,8 +81,9 @@ def _extract_document_content(book: "EpubBook") -> list[str]:
         if item.get_type() == ebooklib.ITEM_DOCUMENT:
             soup = BeautifulSoup(item.get_content(), "html.parser")
 
-            # Extract text from headers and paragraphs
-            for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p"]):
+            # Extract text and images preserving order
+            for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "img"]):
+                tag = cast(Tag, tag)
                 tag_name = getattr(tag, "name", None)
                 if tag_name and tag_name.startswith("h"):
                     level = int(tag_name[1])
@@ -76,9 +92,70 @@ def _extract_document_content(book: "EpubBook") -> list[str]:
                     text = tag.get_text(strip=True)
                     if text:
                         md_body_lines.append(text)
+                elif tag_name == "img":
+                    src = tag.get("src")
+                    if not src:
+                        continue
+                    img_item = book.get_item_with_href(src)
+                    if img_item is None:
+                        continue
+                    alt = tag.get("alt", "")
+                    mime = getattr(img_item, "media_type", "image")
+                    try:
+                        b64 = base64.b64encode(img_item.get_content()).decode("ascii")
+                        md_body_lines.append(f"![{alt}](data:{mime};base64,{b64})")
+                    except (OSError, ValueError):
+                        continue
             md_body_lines.append("")  # セクション区切り
 
     return md_body_lines
+
+
+def _chunk_markdown(md: str, *, max_chars: int = 800) -> list[str]:
+    """Split markdown into roughly equal sized chunks.
+
+    Args:
+        md: Full markdown text.
+        max_chars: Maximum characters per chunk.
+
+    Returns:
+        List of chunk strings.
+    """
+    paras = [p.strip() for p in re.split(r"\n\s*\n", md) if p.strip()]
+    chunks: list[str] = []
+    buf: list[str] = []
+    total = 0
+    for para in paras:
+        if total + len(para) > max_chars and buf:
+            chunks.append("\n".join(buf))
+            buf = []
+            total = 0
+        buf.append(para)
+        total += len(para) + 1
+    if buf:
+        chunks.append("\n".join(buf))
+    return chunks or [md[:max_chars]]
+
+
+def stream_epub_markdown(
+    epub_path: str, cache_path: str, max_chars: int = 800
+) -> Iterator[dict[str, Any]]:
+    """Yield markdown chunks with associated chunk IDs.
+
+    The function ensures the EPUB is converted to markdown (using cache when
+    available) and then yields chunks suitable for streaming to a client.
+
+    Args:
+        epub_path: Path to the EPUB file.
+        cache_path: Path for caching the extracted text.
+        max_chars: Maximum characters per chunk.
+
+    Yields:
+        Dictionaries containing ``chunk_id`` and ``text`` keys.
+    """
+    md = extract_epub_text(epub_path, cache_path)
+    for idx, chunk in enumerate(_chunk_markdown(md, max_chars=max_chars)):
+        yield {"chunk_id": idx, "text": chunk}
 
 
 def _build_markdown_content(metadata: dict[str, str], content_lines: list[str]) -> str:

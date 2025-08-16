@@ -9,6 +9,7 @@ from src.epub_util import (
     extract_epub_metadata,
     extract_epub_text,
     get_epub_cover_path,
+    stream_epub_markdown,
 )
 
 
@@ -59,6 +60,47 @@ class TestEpubUtil:
                 assert "# Title" in result
                 assert "Content" in result
                 assert os.path.exists(cache_path + ".md")
+
+    def test_extract_epub_text_with_image(self):
+        """Images in EPUB should be embedded as data URIs in markdown."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            epub_path = os.path.join(temp_dir, "img.epub")
+            cache_path = os.path.join(temp_dir, "img_cache")
+
+            mock_book = MagicMock()
+            mock_doc = MagicMock()
+            mock_doc.get_type.return_value = 1
+            mock_doc.get_content.return_value = (
+                b"<html><body><img src='a.png' alt='pic'/></body></html>"
+            )
+            mock_book.get_items.return_value = [mock_doc]
+
+            mock_img = MagicMock()
+            mock_img.get_content.return_value = b"binary"
+            mock_img.media_type = "image/png"
+            mock_book.get_item_with_href.return_value = mock_img
+
+            with (
+                patch("src.epub_util.epub.read_epub", return_value=mock_book),
+                patch("src.epub_util.extract_epub_metadata", return_value={}),
+                patch("src.epub_util.ebooklib.ITEM_DOCUMENT", 1),
+            ):
+                result = extract_epub_text(epub_path, cache_path)
+                assert "![pic](data:image/png;base64," in result
+
+    def test_stream_epub_markdown(self):
+        """Streaming returns sequential chunk IDs with text."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            epub_path = os.path.join(temp_dir, "stream.epub")
+            cache_path = os.path.join(temp_dir, "stream_cache")
+
+            sample_md = "\n\n".join(["para" + str(i) for i in range(20)])
+
+            with patch("src.epub_util.extract_epub_text", return_value=sample_md):
+                chunks = list(stream_epub_markdown(epub_path, cache_path, max_chars=50))
+            assert len(chunks) > 1
+            assert chunks[0]["chunk_id"] == 0
+            assert all("text" in c for c in chunks)
 
     def test_extract_epub_metadata_success(self):
         """Test successful metadata extraction."""
