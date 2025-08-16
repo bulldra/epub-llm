@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <title>リーダー - EPUB LLM</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <style>
+        body {
+            background: #15202b;
+            color: #d9d9d9;
+        }
+        .reader-container {
+            max-width: 800px;
+            margin: 40px auto;
+            line-height: 1.6;
+        }
+        .chunk {
+            white-space: pre-wrap;
+            padding: 8px;
+            border-bottom: 1px solid #22303c;
+        }
+        .highlight {
+            background: #fff176;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    {% include 'partials/header.html' %}
+    <div id="content" class="reader-container"></div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const bookId = params.get('book_id');
+        async function load() {
+            const res = await fetch(
+                `/book/${encodeURIComponent(bookId)}/markdown_stream`
+            );
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split('\n');
+                buf = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    const data = JSON.parse(line);
+                    const pre = document.createElement('pre');
+                    pre.id = `chunk-${data.chunk_id}`;
+                    pre.className = 'chunk';
+                    pre.textContent = data.text;
+                    document.getElementById('content').appendChild(pre);
+                }
+            }
+            if (buf.trim()) {
+                const data = JSON.parse(buf);
+                const pre = document.createElement('pre');
+                pre.id = `chunk-${data.chunk_id}`;
+                pre.className = 'chunk';
+                pre.textContent = data.text;
+                document.getElementById('content').appendChild(pre);
+            }
+            const cid = params.get('chunk_id');
+            if (cid) highlightChunk(cid);
+        }
+        function highlightChunk(cid) {
+            const el = document.getElementById(`chunk-${cid}`);
+            if (el) {
+                el.classList.add('highlight');
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        window.highlightChunk = highlightChunk;
+        load();
+    </script>
+</body>
+</html>

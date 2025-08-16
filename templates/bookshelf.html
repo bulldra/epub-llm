@@ -182,36 +182,39 @@
 
 			// 削除ボタン処理
 			for (const btn of document.querySelectorAll('.delete-btn')) {
-				btn.addEventListener('click', async function () {
-					if (!confirm('本当に削除しますか？')) return
-					const bookId = this.getAttribute('data-book-id')
-					const res = await fetch('/delete_epub', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ book_id: bookId }),
-					})
-					if (res.ok) {
-						window.location.reload()
-					} else {
-						alert('削除に失敗しました')
-					}
-				})
-			}
+                                btn.addEventListener('click', async function (e) {
+                                        e.stopPropagation()
+                                        if (!confirm('本当に削除しますか？')) return
+                                        const bookId = this.getAttribute('data-book-id')
+                                        const res = await fetch('/delete_epub', {
+                                                method: 'POST',
+                                                headers: {
+                                                        'Content-Type':
+                                                                'application/json',
+                                                },
+                                                body: JSON.stringify({
+                                                        book_id: bookId,
+                                                }),
+                                        })
+                                        if (res.ok) {
+                                                window.location.reload()
+                                        } else {
+                                                alert('削除に失敗しました')
+                                        }
+                                })
+                        }
 
-			// 本全体クリックでダウンロード
-			for (const item of document.querySelectorAll('.book-item')) {
-				item.addEventListener('click', function (e) {
-					// 削除ボタン押下時は無視
-					if (e.target.closest('.delete-btn')) return
-					const bookId = this.getAttribute('data-book-id')
-					const a = document.createElement('a')
-					a.href = `/download_epub/${encodeURIComponent(bookId)}`
-					a.download = bookId
-					document.body.appendChild(a)
-					a.click()
-					document.body.removeChild(a)
-				})
-			}
+                        // 本をクリックしてリーダーを表示
+                        for (const item of document.querySelectorAll('.book-item')) {
+                                item.addEventListener('click', function () {
+                                        const bid = this.getAttribute('data-book-id')
+                                        const url =
+                                                '/reader?book_id=' +
+                                                encodeURIComponent(bid)
+                                        window.location.href = url
+                                })
+                        }
+                        // ダウンロードは個別のボタンで対応
 		</script>
 	</body>
 </html>
