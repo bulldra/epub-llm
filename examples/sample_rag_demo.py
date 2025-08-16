@@ -196,7 +196,7 @@ def interactive_mode():
 
             # コンテキスト表示
             context = rag_system.get_context(query, max_length=1000)
-            print(f"\n関連コンテキスト:")
+            print("\n関連コンテキスト:")
             print(context[:500] + "..." if len(context) > 500 else context)
 
         except KeyboardInterrupt:

@@ -1,5 +1,6 @@
--   [x] .gitignore を拡充
--   [x] llm や epub rag の部分と UI についてコードを分解し再利用しやすいようにする
--   [x] fast-mcp で mcp サーバー機能を追加（epubrag 部分のみ）
--   [x] README.md を整備
--   [x] flake8 や pylint に従わせて
+-   [x] 根拠を示すために RAG 文脈へ書籍名（タイトル）を含める
+-   [x] テスト実施（pytest: 57 passed, 1 skipped）
+
+実行メモ:
+- `/chat` のコンテキスト整形で、各スニペットのラベルに書籍タイトルを表示（例: `[○○入門#12] ...`）。
+- EPUB→Markdown 抽出と FAISS インデックス化は実行済み（books=41, chunks=188）。

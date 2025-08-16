@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Any
 
-from src.epub_util import extract_epub_metadata, get_epub_cover_path
+from src.epub_util import extract_epub_metadata, extract_epub_toc, get_epub_cover_path
 
 
 def get_book_list(epub_dir: str) -> list[dict[str, Any]]:
@@ -18,6 +18,7 @@ def get_book_list(epub_dir: str) -> list[dict[str, Any]]:
         if fname.lower().endswith(".epub"):
             epub_path = os.path.join(epub_dir, fname)
             meta = extract_epub_metadata(epub_path)
+            toc = extract_epub_toc(epub_path)
             title = meta.get("title") or fname
             author = meta.get("author") or ""
 
@@ -27,6 +28,9 @@ def get_book_list(epub_dir: str) -> list[dict[str, Any]]:
             if cover_path:
                 cover_url = "/static/cache/" + os.path.basename(cover_path)
 
+            # Convert TOC to simple title list for compatibility
+            toc_titles = [item["title"] for item in toc] if toc else []
+
             books.append(
                 {
                     "id": fname,
@@ -34,6 +38,7 @@ def get_book_list(epub_dir: str) -> list[dict[str, Any]]:
                     "cover": cover_url,
                     "author": author,
                     "year": meta.get("year"),
+                    "toc": toc_titles,
                 }
             )
     return books

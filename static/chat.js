@@ -23,6 +23,15 @@ const bookshelfToggle = document.getElementById('bookshelf-toggle')
 const noBooks = document.getElementById('no-books')
 const statusArea = document.getElementById('status-area')
 const selectedBooksList = document.getElementById('selected-books-list')
+const evidenceBar = document.getElementById('evidence-bar')
+const mdModal = document.getElementById('md-viewer-modal')
+const mdModalClose = document.getElementById('md-viewer-close')
+const mdModalBody = document.getElementById('md-viewer-body')
+const mdModalTitle = document.getElementById('md-viewer-title')
+const epubSearchPanel = document.getElementById('epub-search-panel')
+const epubSearchInput = document.getElementById('epub-search-input')
+const epubSearchScope = document.getElementById('epub-search-scope')
+const epubSearchResults = document.getElementById('epub-search-results')
 
 // ステータスメッセージ管理
 let statusMessages = []
@@ -35,6 +44,227 @@ let chatHistory = []
 let timerInterval = null
 let booksData = []
 let currentSessionId = null
+
+// EPUB検索UI（常時表示・ボタンなし）
+
+async function runEpubSearch() {
+	if (!epubSearchInput) return
+	const q = (epubSearchInput.value || '').trim()
+	if (!q) {
+		epubSearchResults.innerHTML =
+			'<div class="info-msg">検索語を入力してください</div>'
+		return
+	}
+	const scope = epubSearchScope?.value || 'selected'
+	epubSearchResults.innerHTML =
+		'<div class="info-msg"><span class="loading-spinner"></span>検索中...</div>'
+	try {
+		let hits = []
+		if (scope === 'all') {
+			const res = await fetch('/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: q, top_k: 10 }),
+			})
+			hits = await res.json()
+		} else {
+			// 選択書籍内で検索
+			const selectedArr = Array.from(selectedBooks)
+			for (const bid of selectedArr) {
+				const url = `/book/${encodeURIComponent(
+					bid
+				)}/search?query=${encodeURIComponent(q)}`
+				const res = await fetch(url, { method: 'POST' })
+				const arr = await res.json()
+				hits.push(...arr)
+			}
+		}
+		// レンダリング
+		if (!Array.isArray(hits) || hits.length === 0) {
+			epubSearchResults.innerHTML = '<div class="info-msg">結果なし</div>'
+			return
+		}
+		epubSearchResults.innerHTML = ''
+		hits.forEach((h) => {
+			if (!h || h.error) return
+			const div = document.createElement('div')
+			div.className = 'epub-hit'
+			const book =
+				h.book_id || (h.book_title ? `${h.book_title}.epub` : '')
+			div.innerHTML = `
+        <div class=\"meta\">${book || ''} #${h.chunk_id ?? ''} • score: ${
+				typeof h.score === 'number' ? h.score.toFixed(3) : ''
+			}</div>
+        <div class=\"body\">${safeParseMarkdown(
+			(h.text || h.content || '').slice(0, 800)
+		)}</div>
+        <div class=\"actions\">
+          <button type=\"button\" class=\"epub-view-btn\" data-book=\"${book}\">全文</button>
+        </div>
+      `
+			epubSearchResults.appendChild(div)
+		})
+	} catch (e) {
+		console.error('EPUB検索失敗:', e)
+		epubSearchResults.innerHTML = `<div class=\"info-msg\">検索エラー: ${e}</div>`
+	}
+}
+
+async function viewFullContent(bookId) {
+	if (!bookId) return
+	try {
+		const res = await fetch(`/book/${encodeURIComponent(bookId)}/content`)
+		const data = await res.json()
+		if (data && data.content) {
+			// 結果をAIメッセージとして表示
+			const aiDiv = document.createElement('div')
+			aiDiv.className = 'ai-msg'
+			aiDiv.innerHTML = safeParseMarkdown(data.content.slice(0, 5000))
+			messages.appendChild(aiDiv)
+			messages.scrollTop = messages.scrollHeight
+		}
+	} catch (e) {
+		console.error('コンテンツ取得失敗:', e)
+	}
+}
+
+// 下切れ防止: 入力バーの高さに応じてメッセージ領域の下余白を動的調整
+function updateChatBottomPadding() {
+	try {
+		const bottom = document.getElementById('bottom-bar-container')
+		if (!bottom || !messages) return
+		const h = bottom.offsetHeight || 0
+		messages.style.paddingBottom = Math.max(16, h + 16) + 'px'
+	} catch (e) {
+		// no-op
+	}
+}
+
+window.addEventListener('resize', updateChatBottomPadding)
+document.addEventListener('DOMContentLoaded', updateChatBottomPadding)
+
+const questionEl = document.getElementById('question')
+if (questionEl) {
+	const observe = () => updateChatBottomPadding()
+	questionEl.addEventListener('input', observe)
+	questionEl.addEventListener('keyup', observe)
+	questionEl.addEventListener('change', observe)
+}
+
+// パネルは常時表示のため開閉処理は不要
+requestAnimationFrame(updateChatBottomPadding)
+// 検索ボタン無し: 入力で自動検索（デバウンス）と Enter で即検索
+let epubSearchTimer = null
+if (epubSearchInput) {
+	epubSearchInput.addEventListener('input', () => {
+		if (epubSearchTimer) clearTimeout(epubSearchTimer)
+		epubSearchTimer = setTimeout(runEpubSearch, 400)
+	})
+	epubSearchInput.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter') {
+			e.preventDefault()
+			runEpubSearch()
+		}
+	})
+}
+if (epubSearchScope) {
+	epubSearchScope.addEventListener('change', runEpubSearch)
+}
+if (epubSearchPanel) {
+	epubSearchPanel.addEventListener('click', (e) => {
+		const t = e.target
+		if (t && t.classList && t.classList.contains('epub-view-btn')) {
+			const bid = t.getAttribute('data-book')
+			viewFullContent(bid)
+		}
+	})
+}
+
+function renderEvidence(items) {
+    if (!evidenceBar) return
+    if (!items || items.length === 0) {
+        evidenceBar.style.display = 'none'
+        evidenceBar.innerHTML = ''
+        return
+    }
+    evidenceBar.style.display = ''
+    const frag = document.createDocumentFragment()
+    items.forEach((ev, idx) => {
+        const a = document.createElement('a')
+        a.href = '#'
+        a.className = 'evidence-link'
+        const title = ev.title || ev.book_id
+        const author = ev.author ? ` / ${ev.author}` : ''
+        const year = ev.year ? ` (${ev.year})` : ''
+        a.textContent = `[${idx + 1}] ${title}${author}${year} #${
+            typeof ev.chunk_id === 'number' ? ev.chunk_id : ''
+        }`
+        a.title = ev.preview || ''
+        a.addEventListener('click', (e) => {
+            e.preventDefault()
+            openMarkdownViewer(ev.book_id, ev.chunk_id)
+        })
+        frag.appendChild(a)
+    })
+    evidenceBar.innerHTML = ''
+    evidenceBar.appendChild(frag)
+}
+
+function openMarkdownViewer(bookId, chunkId) {
+    if (!mdModal || !mdModalBody || !mdModalTitle) return
+    mdModalTitle.textContent = bookId
+    mdModalBody.innerHTML = '<div class="info-msg"><span class="loading-spinner"></span>読込中...</div>'
+    mdModal.style.display = 'block'
+    document.body.style.overflow = 'hidden'
+    fetch(`/book/${encodeURIComponent(bookId)}/chunks`)
+        .then((r) => r.json())
+        .then((data) => {
+            const chunks = (data && Array.isArray(data.chunks)) ? data.chunks : []
+            if (!chunks.length) {
+                mdModalBody.innerHTML = '<div class="info-msg">チャンク情報がありません</div>'
+                return
+            }
+            const container = document.createElement('div')
+            container.className = 'md-chunks'
+            chunks.forEach((c) => {
+                const sec = document.createElement('section')
+                sec.id = `chunk-${c.chunk_id}`
+                sec.className = 'md-chunk'
+                const h = document.createElement('h4')
+                h.className = 'md-chunk-title'
+                h.textContent = `#${c.chunk_id}`
+                const body = document.createElement('div')
+                body.className = 'md-chunk-body'
+                body.innerHTML = safeParseMarkdown(c.text || '')
+                sec.appendChild(h)
+                sec.appendChild(body)
+                container.appendChild(sec)
+            })
+            mdModalBody.innerHTML = ''
+            mdModalBody.appendChild(container)
+            if (typeof chunkId === 'number') {
+                const target = document.getElementById(`chunk-${chunkId}`)
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+        })
+        .catch((e) => {
+            console.error('チャンク読込失敗:', e)
+            mdModalBody.innerHTML = `<div class=\"info-msg\">読込エラー: ${e}</div>`
+        })
+}
+
+if (mdModalClose && mdModal) {
+    mdModalClose.addEventListener('click', () => {
+        mdModal.style.display = 'none'
+        document.body.style.overflow = ''
+    })
+    mdModal.addEventListener('click', (e) => {
+        if (e.target === mdModal) {
+            mdModal.style.display = 'none'
+            document.body.style.overflow = ''
+        }
+    })
+}
 
 // 本棚取得
 fetch('/bookshelf')
@@ -301,7 +531,12 @@ form.addEventListener('submit', async (e) => {
 
 		const response = await fetch('/chat', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				Accept: 'application/x-ndjson',
+				'Cache-Control': 'no-cache',
+			},
+			cache: 'no-store',
 			body: JSON.stringify({ book_ids: selected, messages: chatHistory }),
 			signal: controller.signal,
 		})
@@ -319,46 +554,75 @@ form.addEventListener('submit', async (e) => {
 		}
 
 		let aiMsg = ''
+		let lastStatus = ''
 		aiDiv.textContent = ''
 		const reader = response.body.getReader()
+		let buffer = '' // 改行区切りJSONのバッファ
+		// UTF-8のストリーミングデコード（多バイト境界をまたぐ場合の文字化け対策）
+		const decoder = new TextDecoder('utf-8')
 
 		try {
 			while (true) {
 				const { done, value } = await reader.read()
 				if (done) break
 
-				const chunk = new TextDecoder().decode(value)
-				let obj
-				try {
-					obj = JSON.parse(chunk)
-				} catch (parseError) {
-					console.warn(
-						'JSONパースエラー:',
-						parseError,
-						'chunk:',
-						chunk
-					)
-					continue
-				}
+				// stream:true で継続デコードし、文字化けを防止
+				buffer += decoder.decode(value, { stream: true })
+				const lines = buffer.split('\n')
+				buffer = lines.pop() || '' // 最後の不完全行を保持
 
-				if (obj.status) {
-					updateStatus(obj.status)
-				}
+				for (const line of lines) {
+					const trimmed = line.trim()
+					if (!trimmed) continue
 
-				if (obj.content) {
-					// Remove unwanted template tokens and "Assistant" prefix
-					let cleanContent = obj.content
-						.replace(/assistant<\|header_end\|>/g, '')
-						.replace(
-							/<\|start_header_id\|>assistant<\|end_header_id\|>/g,
-							''
+					let obj
+					try {
+						obj = JSON.parse(trimmed)
+					} catch (parseError) {
+						console.warn(
+							'JSONパースエラー: ',
+							parseError,
+							'line:',
+							trimmed
 						)
-						.replace(/<\|.*?\|>/g, '')
-						.replace(/^Assistant\s*:?\s*/i, '') // "Assistant:"を除去
-					aiMsg += cleanContent
-					aiDiv.innerHTML = safeParseMarkdown(aiMsg)
-					aiDiv.scrollIntoView({ behavior: 'smooth', block: 'end' })
-					messages.scrollTop = messages.scrollHeight
+						continue
+					}
+
+					if (obj.status) {
+						lastStatus = obj.status
+						updateStatus(obj.status)
+					}
+
+					// 逐次トークン（delta）と最終結果（content）の両方に対応
+					const piece =
+						typeof obj.delta === 'string'
+							? obj.delta
+							: typeof obj.content === 'string'
+							? obj.content
+							: ''
+					if (piece) {
+						// 不要トークンと "Assistant" 接頭辞の除去
+						let cleanContent = piece
+							.replace(/assistant<\|header_end\|>/g, '')
+							.replace(
+								/<\|start_header_id\|>assistant<\|end_header_id\|>/g,
+								''
+							)
+							.replace(/<\|.*?\|>/g, '')
+							.replace(/^Assistant\s*:?\s*/i, '')
+						aiMsg += cleanContent
+						aiDiv.innerHTML = safeParseMarkdown(aiMsg)
+						aiDiv.scrollIntoView({
+							behavior: 'smooth',
+							block: 'end',
+						})
+						messages.scrollTop = messages.scrollHeight
+					}
+
+					// エラー行の扱い（必要なら表示）
+					if (obj.error && !piece) {
+						updateStatus(`❌ エラー: ${obj.error}`)
+					}
 				}
 			}
 		} catch (readerError) {
@@ -366,8 +630,51 @@ form.addEventListener('submit', async (e) => {
 			throw new Error('レスポンスの読み取り中にエラーが発生しました')
 		}
 
+		// ストリームを閉じる際に残りをflush
+		if (buffer) {
+			try {
+				const flushed = decoder.decode()
+				if (flushed) {
+					buffer += flushed
+				}
+				const tail = buffer.trim()
+				if (tail) {
+					try {
+						const obj = JSON.parse(tail)
+						const piece =
+							typeof obj.delta === 'string'
+								? obj.delta
+								: typeof obj.content === 'string'
+								? obj.content
+								: ''
+						if (piece) {
+							let cleanContent = piece
+								.replace(/assistant<\|header_end\|>/g, '')
+								.replace(
+									/<\|start_header_id\|>assistant<\|end_header_id\|>/g,
+									''
+								)
+								.replace(/<\|.*?\|>/g, '')
+								.replace(/^Assistant\s*:?\s*/i, '')
+							aiMsg += cleanContent
+							aiDiv.innerHTML = safeParseMarkdown(aiMsg)
+						}
+					} catch (e) {
+						// 最後の断片がJSONでない場合は無視
+					}
+				}
+			} catch (e) {
+				// no-op
+			}
+		}
+
 		if (aiMsg.trim() === '') {
-			aiMsg = '申し訳ありませんが、応答を生成できませんでした。'
+			// 生成テキストが空の場合は直近のステータスを表示して状況を伝える
+			const hint =
+				lastStatus && typeof lastStatus === 'string'
+					? lastStatus
+					: '応答テキストが受信できませんでした。'
+			aiMsg = `申し訳ありません。${hint}`
 			aiDiv.innerHTML = safeParseMarkdown(aiMsg)
 		}
 

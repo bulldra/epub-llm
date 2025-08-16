@@ -24,8 +24,25 @@
 			}
 		</script>
 		<script src="/static/chat.js" defer></script>
+		<script>
+			// ヘッダーの実際の高さを CSS 変数に反映（リサイズ時も更新）
+			document.addEventListener('DOMContentLoaded', () => {
+				function updateHeaderHeight() {
+					const header = document.querySelector('.app-header')
+					if (header) {
+						document.documentElement.style.setProperty(
+							'--header-height',
+							`${header.offsetHeight}px`
+						)
+					}
+				}
+				updateHeaderHeight()
+				window.addEventListener('resize', updateHeaderHeight)
+			})
+		</script>
 	</head>
 	<body>
+		{% include 'partials/header.html' %}
 		<div id="main-layout">
 			<aside id="sidebar">
 				<div class="sidebar-header">
@@ -49,8 +66,17 @@
 					</button>
 				</div>
 				<ul id="history-list"></ul>
+				<div class="sidebar-footer">
+					<a
+						href="/settings"
+						id="sidebar-settings-btn"
+						class="settings-btn"
+						>⚙️ 設定</a
+					>
+				</div>
 			</aside>
 			<div id="chat-container">
+				<div id="evidence-bar" class="evidence-bar" style="display:none"></div>
 				<div id="messages"></div>
 				<div id="bottom-bar-container">
 					<form id="chat-form" class="chat-form-row">
@@ -151,6 +177,15 @@
 						</div>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Markdown Viewer Modal -->
+		<div id="md-viewer-modal" class="modal" style="display:none">
+			<div class="modal-content">
+				<button id="md-viewer-close" class="popup-close-btn" type="button" title="閉じる">×</button>
+				<h3 id="md-viewer-title">Markdown</h3>
+				<div id="md-viewer-body" class="md-viewer"></div>
 			</div>
 		</div>
 	</body>

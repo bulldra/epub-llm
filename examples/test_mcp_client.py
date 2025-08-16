@@ -5,8 +5,6 @@ MCP Server テストクライアント
 このスクリプトは MCP Server の動作を確認するためのテストクライアントです。
 """
 
-import asyncio
-import json
 import sys
 from typing import Any
 
@@ -68,7 +66,7 @@ class MCPTester:
             for i, book in enumerate(result[:3]):  # 最初の3冊のみ表示
                 title = book.get("title", "不明")
                 book_id = book.get("id", "不明")
-                print(f"   {i+1}. {title} (ID: {book_id})")
+                print(f"   {i + 1}. {title} (ID: {book_id})")
 
         return result if result else []
 
@@ -111,7 +109,7 @@ class MCPTester:
                 for i, item in enumerate(result[:2]):  # 最初の2件のみ表示
                     text = item.get("text", "")[:100] + "..."
                     score = item.get("score", 0)
-                    print(f"   {i+1}. スコア: {score:.3f}")
+                    print(f"   {i + 1}. スコア: {score:.3f}")
                     print(f"      テキスト: {text}")
 
     def test_context_search(self, books: list[dict[str, Any]]) -> None:

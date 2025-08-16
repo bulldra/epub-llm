@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+	<head>
+		<meta charset="UTF-8" />
+		<title>設定</title>
+		<link rel="stylesheet" href="/static/style.css" />
+		<style>
+			.settings-wrap {
+				max-width: 900px;
+				margin: 16px auto;
+				padding: 0 16px;
+			}
+			.card {
+				background: #fff;
+				border: 1px solid #e0e0e0;
+				border-radius: 8px;
+				padding: 16px;
+				margin-bottom: 16px;
+			}
+			.row {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+			}
+			.row input,
+			.row select {
+				padding: 8px 10px;
+				border: 1px solid #d0d7de;
+				border-radius: 6px;
+				font-size: 0.95rem;
+			}
+			.row input[type='text'] {
+				flex: 1;
+			}
+			.model-list {
+				max-height: 320px;
+				overflow-y: auto;
+				border: 1px solid #e0e0e0;
+				border-radius: 6px;
+				padding: 8px;
+			}
+			.model-item {
+				padding: 6px 8px;
+				border-bottom: 1px solid #f0f0f0;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+			.model-item:last-child {
+				border-bottom: none;
+			}
+			.badge {
+				padding: 2px 6px;
+				background: #e3f2fd;
+				color: #1976d2;
+				border-radius: 4px;
+				font-size: 12px;
+			}
+		</style>
+	</head>
+	<body>
+		{% include 'partials/header.html' %}
+		<div class="settings-wrap">
+			<h2>書籍の登録</h2>
+			<div class="card">
+				<form
+					id="upload-form"
+					class="row"
+					enctype="multipart/form-data">
+					<input
+						type="file"
+						id="epub-file"
+						name="epub_file"
+						accept=".epub"
+						required />
+					<button type="submit">EPUBアップロード</button>
+					<a
+						href="/bookshelf_ui"
+						class="menu-link"
+						style="margin-left: auto"
+						>本棚を見る</a
+					>
+				</form>
+				<div
+					id="upload-status"
+					class="info-msg"
+					style="display: none"></div>
+			</div>
+			<h2>LM Studio 設定</h2>
+			<div class="card">
+				<div class="row" style="margin-bottom: 8px">
+					<label for="baseUrl">Base URL</label>
+					<input
+						id="baseUrl"
+						type="text"
+						placeholder="http://localhost:1234/v1" />
+					<button id="loadModelsBtn" type="button">
+						モデル一覧取得
+					</button>
+				</div>
+				<div class="row" style="margin-bottom: 8px">
+					<label for="currentModel">現在のモデル</label>
+					<input id="currentModel" type="text" readonly />
+					<span id="currentModelBadge" class="badge">未設定</span>
+				</div>
+				<div class="row" style="margin-bottom: 8px">
+					<label for="manualModel">モデル指定</label>
+					<input
+						id="manualModel"
+						type="text"
+						placeholder="例: gpt-oss-20b" />
+					<button id="saveManualBtn" type="button">保存</button>
+				</div>
+				<div class="model-list" id="modelList"></div>
+			</div>
+		</div>
+		<script>
+			// 書籍アップロード処理
+			;(function () {
+				const form = document.getElementById('upload-form')
+				if (!form) return
+				form.addEventListener('submit', async function (e) {
+					e.preventDefault()
+					const fileInput = document.getElementById('epub-file')
+					const statusEl = document.getElementById('upload-status')
+					if (!fileInput.files.length) return
+					const formData = new FormData()
+					formData.append('epub_file', fileInput.files[0])
+					statusEl.style.display = 'block'
+					statusEl.textContent = 'アップロード中...'
+					try {
+						const res = await fetch('/upload_epub', {
+							method: 'POST',
+							body: formData,
+						})
+						const ok = res.ok
+						let msg = 'アップロードに失敗しました'
+						try {
+							const j = await res.json()
+							msg = j.message || j.error || msg
+						} catch {}
+						statusEl.textContent = ok
+							? '成功: ' + msg
+							: '失敗: ' + msg
+						if (ok) {
+							fileInput.value = ''
+						}
+					} catch (err) {
+						statusEl.textContent = 'エラー: ' + err
+					}
+				})
+			})()
+			async function fetchSelected() {
+				try {
+					const r = await fetch('/api/lmstudio/selected')
+					const d = await r.json()
+					document.getElementById('baseUrl').value =
+						d.base_url || 'http://localhost:1234/v1'
+					const cm = document.getElementById('currentModel')
+					cm.value = d.model || ''
+					document.getElementById('currentModelBadge').textContent =
+						d.model ? '選択中' : '未設定'
+				} catch (e) {
+					console.error(e)
+				}
+			}
+			async function fetchModels() {
+				const baseUrl = document.getElementById('baseUrl').value.trim()
+				// Save baseUrl temporarily by posting current model with it, if a model exists
+				const list = document.getElementById('modelList')
+				list.innerHTML =
+					'<div class="info-msg"><span class="loading-spinner"></span>取得中...</div>'
+				try {
+					// Query server which will call LM Studio /models with current base
+					const r = await fetch(
+						'/api/lmstudio/models?base_url=' +
+							encodeURIComponent(baseUrl)
+					)
+					const d = await r.json()
+					if (d.error) {
+						list.innerHTML = `<div class="info-msg">${d.error}</div>`
+						return
+					}
+					const models = d.models || []
+					if (!models.length) {
+						list.innerHTML =
+							'<div class="info-msg">モデルが見つかりません</div>'
+						return
+					}
+					list.innerHTML = ''
+					models.forEach((name) => {
+						const row = document.createElement('div')
+						row.className = 'model-item'
+						row.innerHTML = `<span>${name}</span><button type="button" data-name="${name}">使用</button>`
+						row.querySelector('button').onclick = async () => {
+							const res = await fetch('/api/lmstudio/selected', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({
+									model: name,
+									base_url: baseUrl,
+								}),
+							})
+							const out = await res.json()
+							if (out && out.result === 'ok') {
+								fetchSelected()
+							} else {
+								alert('設定に失敗: ' + (out.error || 'unknown'))
+							}
+						}
+						list.appendChild(row)
+					})
+				} catch (e) {
+					console.error(e)
+					list.innerHTML = `<div class="info-msg">エラー: ${e}</div>`
+				}
+			}
+			document.getElementById('loadModelsBtn').onclick = fetchModels
+			document.getElementById('saveManualBtn').onclick = async () => {
+				const name = document.getElementById('manualModel').value.trim()
+				const baseUrl = document.getElementById('baseUrl').value.trim()
+				if (!name) {
+					alert('モデル名を入力してください')
+					return
+				}
+				const res = await fetch('/api/lmstudio/selected', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ model: name, base_url: baseUrl }),
+				})
+				const out = await res.json()
+				if (out && out.result === 'ok') {
+					fetchSelected()
+				} else {
+					alert('設定に失敗: ' + (out.error || 'unknown'))
+				}
+			}
+			fetchSelected()
+		</script>
+	</body>
+</html>

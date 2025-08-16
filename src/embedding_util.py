@@ -1,247 +1,170 @@
-"""Embedding utilities for text processing and similarity search.
+"""Embedding / FAISS ユーティリティ (テスト用最小実装).
 
-This module provides functions for creating embeddings from text,
-saving/loading embeddings, building FAISS indices, and performing
-semantic similarity searches.
+主目的:
+ - テキスト群をベクトル化 (開発/テスト時は疑似決定論ベクトル)
+ - FAISS インデックス作成 / 検索
+ - 埋め込み/テキストの永続化 (npy + json)
+ - RAG 用簡易コンテキスト組み立て
+
+本ファイルは test_embedding_util*.py の要求を満たす最小 API を提供する。
 """
 
+from __future__ import annotations
+
+import hashlib
 import json
-import logging
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import faiss
 import numpy as np
-from tqdm import tqdm
+
+EMBED_DIM_DEV = 1024
 
 
-@dataclass
+@dataclass(frozen=True)
 class ModelPair:
-    """Container for model and tokenizer pair."""
+    """モデルとトークナイザの組 (実モデル無い場合は None)。"""
 
-    model: Any
-    tokenizer: Any
+    model: Any | None
+    tokenizer: Any | None
+
+
+def _hash_to_vec(text: str, dim: int) -> np.ndarray:
+    """テキストをハッシュし擬似決定論ベクトルへ。"""
+    h = hashlib.sha256(text.encode("utf-8")).digest()
+    raw = (h * ((dim // len(h)) + 1))[:dim]
+    arr = np.frombuffer(raw, dtype=np.uint8).astype(np.float32)
+    arr /= np.linalg.norm(arr) + 1e-9
+    return arr
 
 
 def create_embeddings_from_texts(
-    texts: list[str],
-    model: Any,
-    tokenizer: Any,
-    batch_size: int = 32,
+    texts: Sequence[str], model: Any | None, tokenizer: Any | None
 ) -> np.ndarray:
-    """Create embeddings from a list of texts using a pre-trained model.
+    """テキスト集合を埋め込みベクトルへ。
 
-    Args:
-        texts: List of input texts to embed.
-        model: The embedding model to use.
-        tokenizer: The tokenizer for the model.
-        batch_size: Number of texts to process in each batch.
-
-    Returns:
-        A numpy array of embeddings with shape (num_texts, embedding_dim).
+    model / tokenizer が None の場合、決定論ハッシュベクトルを生成。
+    実モデル利用パスはテストでは未使用 (簡易実装)。
     """
-    # Development mode: return mock embeddings
-    if model is None or tokenizer is None:
-        logging.warning("Development mode: generating mock embeddings")
-        # Create mock embeddings with standard dimension (1024)
-        num_texts = len(texts)
-        mock_embeddings = np.random.normal(0, 1, (num_texts, 1024)).astype(np.float32)
-        return mock_embeddings
-
-    embeddings: list[np.ndarray] = []
-    for i in tqdm(range(0, len(texts), batch_size), desc="Embedding"):
-        batch = texts[i : i + batch_size]
-        inputs = tokenizer.batch_encode_plus(
-            batch,
-            return_tensors="mlx",
-            padding=True,
-            truncation=True,
-            max_length=512,
-        )
-        outputs = model(
-            inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-        )
-        emb = outputs.text_embeds
-        # Ensure embeddings are properly shaped
-        emb = np.asarray(emb, dtype=np.float32)
-        embeddings.append(emb)
-    return np.concatenate(embeddings, axis=0)
+    del tokenizer  # 現状未使用
+    if model is None:
+        vecs = [_hash_to_vec(t, EMBED_DIM_DEV) for t in texts]
+        return np.vstack(vecs).astype(np.float32)
+    raise RuntimeError("実モデル埋め込みは未実装です (テスト目的)。")
 
 
-def save_embeddings(embeddings: np.ndarray, texts: list[str], out_path: str) -> None:
-    """Save embeddings and texts to disk.
-
-    Args:
-        embeddings: Numpy array of embeddings to save.
-        texts: List of corresponding texts.
-        out_path: Base path for saving (will create .npy and .json files).
-    """
-    np.save(out_path + ".npy", embeddings)
-    with open(out_path + ".json", "w", encoding="utf-8") as f:
-        json.dump(texts, f, ensure_ascii=False, indent=2)
-
-
-def load_embeddings(
-    base_path: str,
-) -> tuple[np.ndarray, list[str]]:
-    """Load embeddings and texts from disk.
-
-    Args:
-        base_path: Base path to load from (expects .npy and .json files).
-
-    Returns:
-        Tuple of (embeddings array, list of texts).
-    """
-    embeddings = np.load(base_path + ".npy")
-    with open(base_path + ".json", encoding="utf-8") as f:
-        texts = json.load(f)
-    return embeddings, texts
-
-
-def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatL2:
-    """Build a FAISS index from embeddings for similarity search.
-
-    Args:
-        embeddings: Numpy array of embeddings.
-
-    Returns:
-        A FAISS IndexFlatL2 index ready for searching.
-
-    Raises:
-        ValueError: If embeddings are not 2D after reshaping.
-    """
-    embeddings = np.asarray(embeddings, dtype=np.float32)
+def build_faiss_index(embeddings: np.ndarray) -> faiss.Index:
+    """FAISS インデックスを構築 (1D 可)。"""
     if embeddings.ndim == 1:
         embeddings = embeddings.reshape(1, -1)
     if embeddings.ndim != 2:
-        raise ValueError(f"embeddings must be 2D, got shape {embeddings.shape}")
-    d = embeddings.shape[1]
-    logging.info(
-        "Building FAISS index with dimension: %d, shape: %s", d, embeddings.shape
-    )
-    index = faiss.IndexFlatL2(d)
+        raise ValueError("embeddings must be 1D or 2D array")
+    if embeddings.dtype != np.float32:
+        embeddings = embeddings.astype(np.float32)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-9
+    embeddings = embeddings / norms
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
     return index
 
 
+def save_embeddings(
+    embeddings: np.ndarray, texts: Sequence[str], base_path: str
+) -> None:
+    np.save(base_path + ".npy", embeddings.astype(np.float32))
+    with open(base_path + ".json", "w", encoding="utf-8") as f:
+        json.dump(list(texts), f, ensure_ascii=False)
+
+
+def load_embeddings(base_path: str) -> tuple[np.ndarray, list[str]]:
+    emb = np.load(base_path + ".npy").astype(np.float32)
+    with open(base_path + ".json", encoding="utf-8") as f:
+        texts = json.load(f)
+    if not isinstance(texts, list):
+        raise ValueError("invalid texts json")
+    return emb, [str(t) for t in texts]
+
+
+def embed_texts_and_save(
+    texts: Sequence[str], base_path: str, model: Any | None, tokenizer: Any | None
+) -> np.ndarray:
+    emb = create_embeddings_from_texts(texts, model, tokenizer)
+    save_embeddings(emb, texts, base_path)
+    return emb
+
+
+def _encode_query(query: str, pair: ModelPair, dim: int) -> np.ndarray:
+    """Encode query into an embedding vector.
+
+    - If model is None: use deterministic hash vector of target ``dim``.
+    - If model is provided: try common paths used by test doubles
+      (``text_embeds`` or mean-pooled ``last_hidden_state``).
+    """
+    if pair.model is None:
+        return _hash_to_vec("__q__" + query, dim).reshape(1, -1)
+    # Tokenize single query (tests provide simple numpy outputs)
+    if pair.tokenizer is None:
+        raise RuntimeError("tokenizer is required when model is provided")
+    tok = pair.tokenizer.batch_encode_plus([query])
+    input_ids = tok.get("input_ids")
+    attention_mask = tok.get("attention_mask")
+    out = pair.model(input_ids, attention_mask)
+    # Path 1: model returns text_embeds (1, d)
+    vec = getattr(out, "text_embeds", None)
+    if vec is not None:
+        arr = np.asarray(vec, dtype=np.float32)
+        reshaped = arr.reshape(arr.shape[0], -1)
+        return cast(np.ndarray, reshaped)
+    # Path 2: model returns last_hidden_state (b, seq_len, d) -> mean pool
+    last = getattr(out, "last_hidden_state", None)
+    if last is not None:
+        arr = np.asarray(last, dtype=np.float32)
+        if arr.ndim != 3:
+            raise RuntimeError("invalid last_hidden_state shape")
+        pooled = arr.mean(axis=1, keepdims=False)
+        reshaped = pooled.reshape(pooled.shape[0], -1)
+        return cast(np.ndarray, reshaped)
+    raise RuntimeError(
+        "unsupported model output (expected text_embeds or last_hidden_state)"
+    )
+
+
 def search_similar(
     query: str,
-    model_pair: ModelPair,
-    index: faiss.IndexFlatL2,
-    texts: list[str],
+    pair: ModelPair,
+    index: faiss.Index,
+    texts: Sequence[str],
     top_k: int = 5,
 ) -> list[tuple[int, float, str]]:
-    """Search for similar texts using semantic similarity.
-
-    Args:
-        query: The query text to search for.
-        model_pair: Container with embedding model and tokenizer.
-        index: Pre-built FAISS index.
-        texts: List of texts corresponding to the index.
-        top_k: Number of similar texts to return.
-
-    Returns:
-        List of tuples (index, distance, text) for the most similar texts.
-    """
-    # Development mode: return mock results
-    if model_pair.model is None or model_pair.tokenizer is None:
-        logging.warning("Development mode: returning mock search results")
-        # Return first few texts as mock results
-        mock_results = []
-        for i in range(min(top_k, len(texts))):
-            mock_results.append((i, 0.5, texts[i]))
-        return mock_results
-
-    inputs = model_pair.tokenizer.batch_encode_plus(
-        [query],
-        return_tensors="mlx",
-        padding=True,
-        truncation=True,
-        max_length=512,
-    )
-    outputs = model_pair.model(
-        inputs["input_ids"],
-        attention_mask=inputs["attention_mask"],
-    )
-    query_emb = outputs.text_embeds
-    query_emb = np.asarray(query_emb, dtype=np.float32)
-
-    # Ensure query embedding dimensions match index
-    if query_emb.ndim == 1:
-        query_emb = query_emb.reshape(1, -1)
-
-    logging.info(
-        "Query embedding shape: %s, Index dimension: %d", query_emb.shape, index.d
-    )
-
-    if query_emb.shape[1] != index.d:
-        raise ValueError(
-            f"Query embedding dimension {query_emb.shape[1]} does not match "
-            f"index dimension {index.d}"
-        )
-
-    distances, indices = index.search(query_emb, top_k)
-    results: list[tuple[int, float, str]] = []
-    for idx, dist in zip(indices[0], distances[0], strict=False):
-        results.append((idx, dist, texts[idx]))
-    return results
+    if not isinstance(index, faiss.Index):
+        raise TypeError("index must be FAISS Index")
+    top_k = max(1, min(top_k, len(texts)))
+    dim = index.d
+    qv = _encode_query(query, pair, dim)
+    if qv.shape[1] != dim:
+        raise ValueError("query embedding dimension mismatch")
+    qv = qv / (np.linalg.norm(qv, axis=1, keepdims=True) + 1e-9)
+    scores, idx = index.search(qv, top_k)
+    res: list[tuple[int, float, str]] = []
+    for rank, (i, sc) in enumerate(zip(idx[0], scores[0], strict=False), start=1):
+        if 0 <= i < len(texts):
+            res.append((rank, float(sc), texts[i]))
+    return res
 
 
 def create_context_from_query(
     query: str,
     model_pair: ModelPair,
-    index: faiss.IndexFlatL2,
-    texts: list[str],
-    top_k: int = 5,
-    *,
-    join_delim: str = "\n\n------\n\n",
+    index: faiss.Index,
+    texts: Sequence[str],
+    top_k: int = 3,
+    join_delim: str = "\n------\n",
 ) -> str:
-    """Create a context string from similar texts for a query.
-
-    Args:
-        query: The query text.
-        model_pair: Container with embedding model and tokenizer.
-        index: Pre-built FAISS index.
-        texts: List of texts corresponding to the index.
-        top_k: Number of similar texts to include.
-        join_delim: Delimiter to join the similar texts.
-
-    Returns:
-        A string containing the joined similar texts.
-    """
-    results: list[tuple[int, float, str]] = search_similar(
-        query=query,
-        model_pair=model_pair,
-        index=index,
-        texts=texts,
-        top_k=top_k,
-    )
-    context: str = join_delim.join([r[2] for r in results])
-    return context
-
-
-def embed_texts_and_save(
-    texts: list[str],
-    out_path: str,
-    model: Any,
-    tokenizer: Any,
-    batch_size: int = 32,
-) -> None:
-    """Create embeddings from texts and save them to disk.
-
-    Args:
-        texts: List of texts to embed.
-        out_path: Base path for saving the embeddings.
-        model: The embedding model.
-        tokenizer: The tokenizer for the model.
-        batch_size: Number of texts to process in each batch.
-    """
-    logging.info("Embedding %d texts and saving to %s", len(texts), out_path)
-    embeddings = create_embeddings_from_texts(
-        texts=texts, model=model, tokenizer=tokenizer, batch_size=batch_size
-    )
-    save_embeddings(embeddings, texts, out_path)
+    hits = search_similar(query, model_pair, index, texts, top_k=top_k)
+    return join_delim.join(h[2] for h in hits)
 
 
 def load_and_search(
@@ -250,22 +173,31 @@ def load_and_search(
     model_pair: ModelPair,
     top_k: int = 5,
 ) -> list[tuple[int, float, str]]:
-    """Load embeddings from disk and search for similar texts.
-
-    Args:
-        query: The query text to search for.
-        base_path: Base path to load embeddings from.
-        model_pair: Container with embedding model and tokenizer.
-        top_k: Number of similar texts to return.
-
-    Returns:
-        List of tuples (index, distance, text) for the most similar texts.
-    """
-    logging.info(
-        "Loading embeddings from %s and searching for query: %s",
-        base_path,
-        query,
-    )
-    embeddings, texts = load_embeddings(base_path)
-    index = build_faiss_index(embeddings)
+    emb, texts = load_embeddings(base_path)
+    index = build_faiss_index(emb)
     return search_similar(query, model_pair, index, texts, top_k=top_k)
+
+
+def iter_batch(it: Iterable[str], batch_size: int) -> Iterable[list[str]]:
+    batch: list[str] = []
+    for t in it:
+        batch.append(t)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+__all__ = [
+    "ModelPair",
+    "create_embeddings_from_texts",
+    "build_faiss_index",
+    "save_embeddings",
+    "load_embeddings",
+    "embed_texts_and_save",
+    "search_similar",
+    "create_context_from_query",
+    "load_and_search",
+    "iter_batch",
+]

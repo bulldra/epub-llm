@@ -64,11 +64,11 @@ def start_mcp_server() -> bool:
         if not ensure_dependencies():
             return False
 
-        logger.info("EPUB-LLM MCP Server を起動中...")
+        logger.info("本棚 MCP Server を起動中...")
 
         # サーバー情報をログ出力
         logger.info("=" * 50)
-        logger.info("EPUB-LLM MCP Server")
+        logger.info("本棚 MCP Server")
         logger.info("プロジェクトルート: %s", project_root)
         logger.info("PythonPath: %s", sys.path[0])
         logger.info("=" * 50)
@@ -98,6 +98,23 @@ def main() -> None:
 
     # 開発モード設定
     os.environ.setdefault("DEV_MODE", "true")
+
+    # マルチプロセッシング関連の設定
+    # MCP環境でのtqdmエラーを回避
+    os.environ["NO_PROXY"] = "*"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    # Hugging Faceのプログレスバーを無効化（tqdmエラー回避）
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
+    # 警告メッセージの抑制
+    os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+    os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
+
+    # macOSでのfork安全性を確保
+    if sys.platform == "darwin":
+        os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
     logger.info("MCP Server 起動スクリプト開始")
 

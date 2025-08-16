@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>MCP Server Setup - EPUB Manager</title>
+		<link href="/static/css/style.css" rel="stylesheet" />
+		<style>
+			.setup-container {
+				max-width: 800px;
+				margin: 40px auto;
+				padding: 20px;
+			}
+			.step {
+				background: #f8f9fa;
+				border-radius: 8px;
+				padding: 20px;
+				margin-bottom: 20px;
+				border-left: 4px solid #007bff;
+			}
+			.step h3 {
+				margin-top: 0;
+				color: #007bff;
+			}
+			.code-block {
+				background: #2d3748;
+				color: #e2e8f0;
+				padding: 15px;
+				border-radius: 6px;
+				overflow-x: auto;
+				margin: 10px 0;
+				font-family: 'Courier New', monospace;
+			}
+			.copy-btn {
+				background: #28a745;
+				color: white;
+				border: none;
+				padding: 5px 10px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 12px;
+				margin-left: 10px;
+			}
+			.copy-btn:hover {
+				background: #218838;
+			}
+			.status-indicator {
+				display: inline-block;
+				width: 12px;
+				height: 12px;
+				border-radius: 50%;
+				margin-right: 8px;
+			}
+			.status-success {
+				background: #28a745;
+			}
+			.status-warning {
+				background: #ffc107;
+			}
+			.status-error {
+				background: #dc3545;
+			}
+			.mcp-config {
+				background: #f8f9fa;
+				border: 1px solid #dee2e6;
+				border-radius: 6px;
+				padding: 15px;
+				margin: 10px 0;
+			}
+			.nav-buttons {
+				text-align: center;
+				margin: 30px 0;
+			}
+			.nav-buttons a {
+				display: inline-block;
+				padding: 10px 20px;
+				margin: 0 10px;
+				background: #007bff;
+				color: white;
+				text-decoration: none;
+				border-radius: 5px;
+				transition: background-color 0.3s;
+			}
+			.nav-buttons a:hover {
+				background: #0056b3;
+			}
+		</style>
+	</head>
+	<body>
+		{% include 'partials/header.html' %}
+		<div class="container">
+			<h1>📡 MCP Server Setup Guide</h1>
+			<p>
+				EPUBライブラリをModel Context Protocol (MCP)
+				サーバーとして設定する手順です。
+			</p>
+
+			<div class="setup-container">
+				<!-- Step 1: Server Status -->
+				<div class="step">
+					<h3>📊 Step 1: Server Status</h3>
+					<p>現在のMCPサーバーの状態を確認します。</p>
+
+					<div id="server-status">
+						<p>
+							<span class="status-indicator status-warning"></span
+							>サーバーステータスを確認中...
+						</p>
+					</div>
+
+					<button
+						onclick="checkServerStatus()"
+						class="btn btn-primary">
+						ステータス更新
+					</button>
+				</div>
+
+				<!-- Step 2: Claude Desktop Configuration -->
+				<div class="step">
+					<h3>⚙️ Step 2: Claude Desktop設定</h3>
+					<p>
+						Claude Desktopの設定ファイルにMCPサーバーを追加します。
+					</p>
+
+					<p><strong>設定ファイルの場所:</strong></p>
+					<ul>
+						<li>
+							<strong>macOS:</strong>
+							<code
+								>~/Library/Application
+								Support/Claude/claude_desktop_config.json</code
+							>
+						</li>
+						<li>
+							<strong>Windows:</strong>
+							<code
+								>%APPDATA%\Claude\claude_desktop_config.json</code
+							>
+						</li>
+					</ul>
+
+					<div class="mcp-config">
+						<h4>設定内容をコピー:</h4>
+						<div class="code-block" id="mcp-config-content">
+							{ "mcpServers": { "epub-manager": { "command":
+							"uvicorn", "args": [ "src.mcp_server:mcp_app",
+							"--host", "localhost", "--port", "8001" ], "cwd":
+							"<span id="current-path">{{ current_path }}</span>"
+							} } }
+						</div>
+						<button
+							onclick="copyToClipboard('mcp-config-content')"
+							class="copy-btn">
+							📋 コピー
+						</button>
+					</div>
+
+					<p>
+						<strong>注意:</strong>
+						<code>&lt;EPUB_MANAGER_PATH&gt;</code
+						>を実際のプロジェクトパスに置き換えてください。
+					</p>
+				</div>
+
+				<!-- Step 3: Start Server -->
+				<div class="step">
+					<h3>🚀 Step 3: MCPサーバー起動</h3>
+					<p>MCPサーバーを起動します。</p>
+
+					<div class="code-block">
+						<div>cd {{ current_path }}</div>
+						<div>
+							uvicorn src.mcp_server:mcp_app --host localhost
+							--port 8001
+						</div>
+					</div>
+					<button
+						onclick="copyToClipboard('start-command')"
+						class="copy-btn">
+						📋 コピー
+					</button>
+
+					<div style="margin-top: 15px">
+						<button
+							onclick="startMCPServer()"
+							class="btn btn-success">
+							🚀 サーバー起動
+						</button>
+						<button
+							onclick="stopMCPServer()"
+							class="btn btn-danger">
+							⏹ サーバー停止
+						</button>
+					</div>
+				</div>
+
+				<!-- Step 4: Test Connection -->
+				<div class="step">
+					<h3>🧪 Step 4: 接続テスト</h3>
+					<p>MCPサーバーとの通信をテストします。</p>
+
+					<div id="test-results">
+						<button
+							onclick="testMCPConnection()"
+							class="btn btn-info">
+							🔍 接続テスト実行
+						</button>
+					</div>
+				</div>
+
+				<!-- Step 5: Available Tools -->
+				<div class="step">
+					<h3>🛠 Step 5: 利用可能なツール</h3>
+					<p>EPUBライブラリで利用可能なMCPツール一覧:</p>
+
+					<ul>
+						<li>
+							<strong>list_epub_books()</strong> -
+							EPUB書籍一覧を取得
+						</li>
+						<li>
+							<strong>get_epub_metadata(book_id)</strong> -
+							書籍のメタデータを取得
+						</li>
+						<li>
+							<strong>search_epub_content(book_id, query)</strong>
+							- 書籍内容検索（基本機能）
+						</li>
+					</ul>
+
+					<div id="tools-test">
+						<button onclick="testTools()" class="btn btn-info">
+							🧪 ツール動作テスト
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="nav-buttons">
+				<a href="/bookshelf_ui">📚 書棚に戻る</a>
+				<a href="/health">🏥 ヘルスチェック</a>
+			</div>
+		</div>
+
+		<script>
+			async function checkServerStatus() {
+				const statusDiv = document.getElementById('server-status')
+				statusDiv.innerHTML =
+					'<p><span class="status-indicator status-warning"></span>確認中...</p>'
+
+				try {
+					const response = await fetch('/health')
+					const data = await response.json()
+
+					if (response.ok) {
+						statusDiv.innerHTML = `
+                        <p><span class="status-indicator status-success"></span>メインサーバー: 正常稼働</p>
+                        <p>ステータス: ${data.status}</p>
+                    `
+					} else {
+						statusDiv.innerHTML =
+							'<p><span class="status-indicator status-error"></span>メインサーバー: 応答なし</p>'
+					}
+				} catch (error) {
+					statusDiv.innerHTML =
+						'<p><span class="status-indicator status-error"></span>サーバー接続エラー</p>'
+				}
+			}
+
+			async function startMCPServer() {
+				try {
+					const response = await fetch('/api/mcp/start', {
+						method: 'POST',
+					})
+					const data = await response.json()
+					alert(data.message || 'MCPサーバーを起動しました')
+				} catch (error) {
+					alert('起動に失敗しました: ' + error.message)
+				}
+			}
+
+			async function stopMCPServer() {
+				try {
+					const response = await fetch('/api/mcp/stop', {
+						method: 'POST',
+					})
+					const data = await response.json()
+					alert(data.message || 'MCPサーバーを停止しました')
+				} catch (error) {
+					alert('停止に失敗しました: ' + error.message)
+				}
+			}
+
+			async function testMCPConnection() {
+				const resultsDiv = document.getElementById('test-results')
+				resultsDiv.innerHTML = '<p>テスト実行中...</p>'
+
+				try {
+					const response = await fetch('/api/mcp/test')
+					const data = await response.json()
+
+					if (data.success) {
+						resultsDiv.innerHTML = `
+                        <p><span class="status-indicator status-success"></span>MCP接続: 成功</p>
+                        <p>応答時間: ${data.response_time}ms</p>
+                    `
+					} else {
+						resultsDiv.innerHTML = `<p><span class="status-indicator status-error"></span>MCP接続: 失敗 - ${data.error}</p>`
+					}
+				} catch (error) {
+					resultsDiv.innerHTML = `<p><span class="status-indicator status-error"></span>テストエラー: ${error.message}</p>`
+				}
+			}
+
+			async function testTools() {
+				const testDiv = document.getElementById('tools-test')
+				testDiv.innerHTML = '<p>ツールテスト実行中...</p>'
+
+				try {
+					const response = await fetch('/api/mcp/test-tools')
+					const data = await response.json()
+
+					let html = '<h4>ツールテスト結果:</h4><ul>'
+					for (const [tool, result] of Object.entries(data.results)) {
+						const status = result.success
+							? 'status-success'
+							: 'status-error'
+						html += `<li><span class="status-indicator ${status}"></span>${tool}: ${result.message}</li>`
+					}
+					html += '</ul>'
+
+					testDiv.innerHTML = html
+				} catch (error) {
+					testDiv.innerHTML = `<p><span class="status-indicator status-error"></span>テストエラー: ${error.message}</p>`
+				}
+			}
+
+			function copyToClipboard(elementId) {
+				const element = document.getElementById(elementId)
+				const text = element.textContent || element.innerText
+
+				navigator.clipboard
+					.writeText(text)
+					.then(() => {
+						alert('クリップボードにコピーしました!')
+					})
+					.catch((err) => {
+						console.error('コピーに失敗しました: ', err)
+						// フォールバック
+						const textArea = document.createElement('textarea')
+						textArea.value = text
+						document.body.appendChild(textArea)
+						textArea.select()
+						document.execCommand('copy')
+						document.body.removeChild(textArea)
+						alert('クリップボードにコピーしました!')
+					})
+			}
+
+			// ページ読み込み時にサーバーステータスをチェック
+			document.addEventListener('DOMContentLoaded', function () {
+				checkServerStatus()
+			})
+		</script>
+	</body>
+</html>

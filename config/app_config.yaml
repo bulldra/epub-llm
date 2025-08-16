@@ -1,22 +1,4 @@
-# EPUB-LLM Application Configuration
-
-# LLM設定
-llm:
-    # 開発モード設定
-    dev_mode: true # true: モデル無効化、false: モデル有効
-
-    # LLMモデル設定
-    model_name: 'lmstudio-community/Llama-4-Scout-17B-16E-MLX-text-4bit'
-
-    # 埋め込みモデル設定
-    embedding_model_name: 'mlx-community/multilingual-e5-large-mlx'
-
-    # 生成設定
-    generation:
-        max_tokens: 4096
-        temperature: 0.7
-        top_p: 0.9
-        repetition_penalty: 1.1
+# EPUB Application Configuration
 
 # サーバー設定
 server:
@@ -39,20 +21,46 @@ logging:
 
     # ログファイル設定
     files:
-        app_log: 'epub-llm.log'
+        app_log: 'epub-app.log'
         server_log: 'server.log'
 
 # キャッシュ設定
 cache:
-    embeddings_cache: true
     text_cache: true
     cover_cache: true
+
+# MLX 設定
+mlx:
+    # 使用する埋め込みモデル（mlx_lm でロード可能なID）
+    # 例: 'mlx-community/multilingual-e5-large-mlx'
+    embedding_model: 'mlx-community/multilingual-e5-large-mlx'
 
 # 環境変数オーバーライド設定
 env_overrides:
     # 環境変数名 -> 設定キーパスのマッピング
-    DEV_MODE: 'llm.dev_mode'
-    LLM_MODEL_NAME: 'llm.model_name'
-    EMBED_MODEL_NAME: 'llm.embedding_model_name'
     SERVER_HOST: 'server.host'
     SERVER_PORT: 'server.port'
+    MLX_EMBEDDING_MODEL: 'mlx.embedding_model'
+    LMSTUDIO_BASE_URL: 'lmstudio.base_url'
+    LMSTUDIO_MODEL: 'lmstudio.model'
+    LMSTUDIO_TEMPERATURE: 'lmstudio.temperature'
+    LMSTUDIO_MAX_TOKENS: 'lmstudio.max_tokens'
+    LMSTUDIO_ALLOWED_MODELS: 'lmstudio.allowed_models'
+    LMSTUDIO_DISALLOWED_MODELS: 'lmstudio.disallowed_models'
+
+# LM Studio 設定
+lmstudio:
+    # LM Studio OpenAI 互換エンドポイント設定（YAML で管理）
+    base_url: 'http://localhost:1234/v1'
+    # 起動時に必須。LM Studio 側でロード済みのモデルIDを指定する。
+    # 例: curl http://localhost:1234/v1/models で一覧取得可能。
+    model: 'openai/gpt-oss-20b'
+    temperature: 0.2
+    max_tokens: 20480
+    allowed_models: ['openai/gpt-oss-20b']
+    disallowed_models: 'qwen3-30b-a3b-instruct-2507'
+
+    # コンテキスト収集に関するデフォルト
+    per_book_top_k: 3 # 各書籍での上位取得数
+    all_books_top_k: 5 # 全書籍検索時の上位取得数
+    max_context_snippets: 12 # LLM へ渡す最大スニペット数

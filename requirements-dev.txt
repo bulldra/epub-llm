@@ -24,3 +24,6 @@ jupyter>=1.1.0
 # Documentation
 mkdocs>=1.6.0
 mkdocs-material>=9.5.0
+
+# Dev reload watcher
+watchfiles>=0.22.0

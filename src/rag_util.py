@@ -1,240 +1,237 @@
-"""
-RAG (Retrieval-Augmented Generation) utility functions.
+"""Lightweight RAG 管理ユーティリティ。
+
+目的:
+1. EPUB → Markdown 抽出 (既存キャッシュ再利用)
+2. MLX / 任意埋め込みサービスでの FAISS インデックス再利用
+3. 検索結果のシンプルキャッシュ (同一 query / book_id / top_k)
+
+テストやスクリプトから簡易利用するための薄いラッパ。
+本番アプリは既存の MLXEmbeddingService / FastAPI を優先利用。
 """
 
+from __future__ import annotations
+
+import json
 import logging
 import os
-from typing import Any
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any, Literal
 
-import numpy as np
+from src.epub_util import extract_epub_text
 
-from src.common_util import create_text_chunks
-from src.embedding_util import (
-    ModelPair,
-    build_faiss_index,
-    create_embeddings_from_texts,
-    load_embeddings,
-    save_embeddings,
-    search_similar,
-)
-from src.epub_util import extract_epub_metadata, extract_epub_text
+LOGGER = logging.getLogger(__name__)
+
+SearchResult = dict[str, Any]
 
 
-class RAGManager:
-    """Manages RAG operations including embedding creation and similarity search."""
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def get_or_create_markdown(epub_path: str, cache_dir: str) -> str:
+    """EPUB から Markdown を生成 (既に存在すれば再利用) しパスを返す。
+
+    epub_path が存在しない場合でも `<cache_dir>/<book_id>.md` があればそれを返す。
+    戻り値: markdown ファイルパス
+    失敗時: FileNotFoundError
+    """
+    book_id = os.path.splitext(os.path.basename(epub_path))[0]
+    txt_cache = os.path.join(cache_dir, f"{book_id}.txt")
+    md_cache = os.path.join(cache_dir, f"{book_id}.md")
+    if os.path.exists(md_cache):
+        return md_cache
+    if not os.path.exists(epub_path):  # md 無く epub も無い
+        raise FileNotFoundError(f"EPUB も Markdown も存在しません: {epub_path}")
+    os.makedirs(cache_dir, exist_ok=True)
+    # extract_epub_text は txt_cache を与えると .md を作成する実装
+    extract_epub_text(epub_path, txt_cache)
+    if not os.path.exists(md_cache):  # 念のため
+        raise FileNotFoundError(f"Markdown 生成失敗: {md_cache}")
+    return md_cache
+
+
+@dataclass
+class SearchCacheEntry:
+    """検索結果キャッシュ 1 件分の保持構造。"""
+
+    query: str
+    book_id: str | None
+    top_k: int
+    results: list[SearchResult]
+    created_at: str
+    chunks_total: int
+
+
+class RAGPipeline:
+    """簡易 RAG パイプライン。
+
+    埋め込みサービスは MLXEmbeddingService 互換 (add_book, search, save_index,
+    load_index, get_stats) の任意オブジェクトを受け入れる。
+    """
 
     def __init__(
-        self, embed_model: Any, embed_tokenizer: Any, cache_dir: str, epub_dir: str
-    ):
-        self.embed_model = embed_model
-        self.embed_tokenizer = embed_tokenizer
+        self,
+        cache_dir: str,
+        epub_dir: str,
+        embedding_service: Any | None = None,
+        model_loader: Callable[[], Any] | None = None,
+    ) -> None:
         self.cache_dir = cache_dir
         self.epub_dir = epub_dir
-        self.logger = logging.getLogger(__name__)
-        self.model_pair = ModelPair(model=embed_model, tokenizer=embed_tokenizer)
+        os.makedirs(cache_dir, exist_ok=True)
+        # 遅延 import (モデルロード回避のため)
+        if embedding_service is None:
+            from src.mlx_embedding_service import MLXEmbeddingService
 
-    def ensure_embeddings_exist(self, book_id: str) -> bool:
-        """Ensure embeddings exist for a book, creating them if necessary."""
-        base_path = os.path.join(self.cache_dir, book_id)
+            embedding_service = MLXEmbeddingService(cache_dir)
+        self.embedding_service = embedding_service
+        self._search_cache_path = os.path.join(cache_dir, "faiss_search_cache.json")
+        self._search_cache: list[SearchCacheEntry] = []
+        self._cache_loaded = False
+        self._model_loader = model_loader  # 将来拡張用
 
-        if os.path.exists(base_path + ".npy") and os.path.exists(base_path + ".json"):
-            self.logger.info("[RAG] Using cached embeddings for: %s", book_id)
-            return True
+    # --------- 内部ユーティリティ ---------
+    def _load_search_cache(self) -> None:
+        if self._cache_loaded:
+            return
+        if os.path.exists(self._search_cache_path):
+            try:
+                with open(self._search_cache_path, encoding="utf-8") as f:
+                    raw = json.load(f)
+                entries = raw.get("entries", []) if isinstance(raw, dict) else []
+                for e in entries:
+                    if not isinstance(e, dict):
+                        continue
+                    self._search_cache.append(
+                        SearchCacheEntry(
+                            query=str(e.get("query")),
+                            book_id=e.get("book_id"),
+                            top_k=int(e.get("top_k", 0)),
+                            results=e.get("results", []),
+                            created_at=str(e.get("created_at", "")),
+                            chunks_total=int(e.get("chunks_total", 0)),
+                        )
+                    )
+            except (OSError, ValueError, TypeError) as exc:
+                LOGGER.warning("検索キャッシュ読込失敗: %s", exc)
+        self._cache_loaded = True
 
+    def _save_search_cache(self) -> None:
         try:
-            self.logger.info("[RAG] Creating embeddings for: %s", book_id)
-            epub_path = os.path.join(self.epub_dir, book_id)
+            data = {
+                "updated_at": _now_iso(),
+                "entries": [e.__dict__ for e in self._search_cache],
+            }
+            with open(self._search_cache_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        except (OSError, ValueError, TypeError) as exc:
+            LOGGER.warning("検索キャッシュ保存失敗: %s", exc)
 
-            # Extract text from EPUB
-            text = extract_epub_text(epub_path, base_path + ".txt")
-            if not text:
-                self.logger.error("[RAG] No text extracted from: %s", book_id)
-                return False
+    def _match_cache(
+        self, query: str, book_id: str | None, top_k: int, chunks_total: int
+    ) -> list[SearchResult] | None:
+        self._load_search_cache()
+        for entry in self._search_cache:
+            if (
+                entry.query == query
+                and entry.book_id == book_id
+                and entry.top_k == top_k
+                and entry.chunks_total == chunks_total
+            ):
+                return entry.results
+        return None
 
-            # Create text chunks
-            chunks = self._create_text_chunks(text)
-            self.logger.info("[RAG] Created %d chunks for: %s", len(chunks), book_id)
-
-            # Generate embeddings
-            embeddings = create_embeddings_from_texts(
-                chunks, self.embed_model, self.embed_tokenizer
-            )
-
-            # Save embeddings
-            save_embeddings(embeddings, chunks, base_path)
-            self.logger.info("[RAG] Saved embeddings for: %s", book_id)
-            return True
-
-        except (OSError, ValueError, RuntimeError) as e:
-            self.logger.error(
-                "[RAG] Failed to create embeddings for %s: %s", book_id, e
-            )
-            return False
-
-    def _create_text_chunks(
-        self, text: str, chunk_size: int = 4000, overlap: int = 500
-    ) -> list[str]:
-        """Create overlapping text chunks from text."""
-        return create_text_chunks(text, chunk_size, overlap)
-
-    def load_book_embeddings(self, book_id: str) -> tuple[np.ndarray, list[str]] | None:
-        """Load embeddings for a single book."""
-        if not self.ensure_embeddings_exist(book_id):
-            return None
-
-        try:
-            base_path = os.path.join(self.cache_dir, book_id)
-            embeddings, texts = load_embeddings(base_path)
-            self.logger.info(
-                "[RAG] Loaded embeddings for %s: %s, %d texts",
-                book_id,
-                embeddings.shape,
-                len(texts),
-            )
-            return embeddings, texts
-        except (OSError, ValueError, RuntimeError) as e:
-            self.logger.error("[RAG] Failed to load embeddings for %s: %s", book_id, e)
-            return None
-
-    def load_multiple_books_embeddings(
-        self, book_ids: list[str]
-    ) -> tuple[np.ndarray | None, list[str], list[str], dict[str, str]]:
-        """Load and combine embeddings from multiple books."""
-        all_embeddings = []
-        all_texts = []
-        all_book_ids = []
-        book_id_to_title = {}
-
-        for book_id in book_ids:
-            result = self.load_book_embeddings(book_id)
-            if result is not None:
-                embeddings, texts = result
-                all_embeddings.append(embeddings)
-                all_texts.extend(texts)
-                all_book_ids.extend([book_id] * len(texts))
-
-                # Get book title
-                epub_path = os.path.join(self.epub_dir, book_id)
-                try:
-                    meta = extract_epub_metadata(epub_path)
-                    title = meta.get("title", book_id)
-                    book_id_to_title[book_id] = title
-                except (OSError, ValueError, KeyError):
-                    book_id_to_title[book_id] = book_id
-
-        if not all_embeddings:
-            return None, [], [], {}
-
-        # Combine all embeddings
-        combined_embeddings = np.concatenate(all_embeddings, axis=0)
-
-        return combined_embeddings, all_texts, all_book_ids, book_id_to_title
-
-    def search_context(
-        self, query: str, book_ids: list[str], top_k: int = 10
-    ) -> tuple[str, list[tuple[int, float, str]]]:
-        """Search for relevant context across multiple books."""
-        if not book_ids:
-            return "", []
-
-        # Load embeddings for all books
-        embeddings, texts, _, _ = self.load_multiple_books_embeddings(book_ids)
-
-        if embeddings is None:
-            self.logger.warning("[RAG] No embeddings loaded for books: %s", book_ids)
-            return "", []
-
-        # Build search index
-        index = build_faiss_index(embeddings)
-
-        # Search for similar content
-        results = search_similar(
-            query=query,
-            model_pair=self.model_pair,
-            index=index,
-            texts=texts,
-            top_k=top_k,
-        )
-
-        # Format context
-        context = "\\n---\\n".join([r[2] for r in results])
-
-        self.logger.info(
-            "[RAG] Found %d context chunks for query: %s", len(results), query[:50]
-        )
-
-        return context, results
-
-    def search_context_with_metadata(  # pylint: disable=too-many-locals
-        self, query: str, book_ids: list[str], top_k: int = 10
-    ) -> list[dict[str, Any]]:
-        """Search for relevant context and return structured metadata."""
-        if not book_ids:
-            return []
-
-        # Load embeddings for all books
-        embeddings, texts, book_id_texts, book_id_to_title = (
-            self.load_multiple_books_embeddings(book_ids)
-        )
-
-        if embeddings is None:
-            self.logger.warning("[RAG] No embeddings loaded for books: %s", book_ids)
-            return []
-
-        # Build search index
-        index = build_faiss_index(embeddings)
-
-        # Search for similar content
-        results = search_similar(
-            query=query,
-            model_pair=self.model_pair,
-            index=index,
-            texts=texts,
-            top_k=top_k,
-        )
-
-        # Create structured results
-        context_items = []
-        for idx, score, text in results:
-            book_id = book_id_texts[idx]
-            book_title = book_id_to_title.get(book_id, book_id)
-
-            context_items.append(
-                {
-                    "book_id": book_id,
-                    "book_title": book_title,
-                    "index": idx,
-                    "score": float(score),
-                    "text": text,
-                }
-            )
-
-        return context_items
-
-    def search_single_book(
-        self, book_id: str, query: str, top_k: int = 5
-    ) -> list[dict[str, Any]]:
-        """Search within a single book."""
-        result = self.load_book_embeddings(book_id)
-        if result is None:
-            return [{"error": "Embeddings not found. Process the book first."}]
-
-        embeddings, texts = result
-
-        try:
-            index = build_faiss_index(embeddings)
-            results = search_similar(
+    def _store_cache(
+        self,
+        query: str,
+        book_id: str | None,
+        top_k: int,
+        chunks_total: int,
+        results: list[SearchResult],
+    ) -> None:
+        # 既存重複は追加しない
+        if self._match_cache(query, book_id, top_k, chunks_total) is not None:
+            return
+        self._search_cache.append(
+            SearchCacheEntry(
                 query=query,
-                model_pair=self.model_pair,
-                index=index,
-                texts=texts,
+                book_id=book_id,
                 top_k=top_k,
+                results=results,
+                created_at=_now_iso(),
+                chunks_total=chunks_total,
             )
+        )
+        self._save_search_cache()
 
-            return [
-                {"index": r[0], "score": float(r[1]), "text": r[2], "book_id": book_id}
-                for r in results
-            ]
-        except (OSError, ValueError, RuntimeError) as e:
-            self.logger.error("[RAG] Search error for book %s: %s", book_id, e)
-            return [{"error": str(e)}]
+    # --------- 公開 API ---------
+    def ensure_index(self) -> None:
+        """インデックスをロード (無ければ構築)。"""
+        if self.embedding_service.load_index():
+            return
+        # 無い場合は EPUB から構築
+        epub_files = [f for f in os.listdir(self.epub_dir) if f.endswith(".epub")]
+        for epub_file in epub_files:
+            book_id = epub_file[:-5]
+            full = os.path.join(self.epub_dir, epub_file)
+            try:
+                self.embedding_service.add_book(book_id, full)
+            except FileNotFoundError:
+                continue
+        try:
+            self.embedding_service.save_index()
+        except (OSError, ValueError, RuntimeError) as exc:
+            LOGGER.debug("save_index 失敗(無視): %s", exc)
+
+    def add_book(self, book_id: str) -> None:
+        """単一書籍をインデックス化 (既存 md 再利用)。
+
+        - EPUB が存在しない場合でも cache_dir に <book_id>.md があれば追加可能
+        - 既にインデックス化済みかどうかの判定はシンプル化 (再追加は FAISS が内部で扱う)
+        """
+        epub_path = os.path.join(self.epub_dir, f"{book_id}.epub")
+        md_path = os.path.join(self.cache_dir, f"{book_id}.md")
+        if not os.path.exists(epub_path) and not os.path.exists(md_path):
+            raise FileNotFoundError(
+                f"EPUB / Markdown が存在しません: {book_id} (期待: {epub_path} or {md_path})"
+            )
+        self.embedding_service.add_book(book_id, epub_path)
+        try:
+            self.embedding_service.save_index()
+        except (OSError, ValueError, RuntimeError) as exc:
+            LOGGER.debug("save_index 失敗(無視): %s", exc)
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        book_id: str | None = None,
+        use_cache: bool = True,
+        cache_policy: Literal["prefer", "refresh", "ignore"] = "prefer",
+    ) -> list[SearchResult]:
+        """検索を実行し結果を返す。
+
+        cache_policy:
+            prefer  : キャッシュあれば利用 (デフォルト)
+            refresh : 毎回再検索しキャッシュ更新
+            ignore  : キャッシュ読み書き無し
+        """
+        self.ensure_index()
+        stats = self.embedding_service.get_stats()
+        chunks_total = (
+            int(stats.get("total_chunks", 0)) if isinstance(stats, dict) else 0
+        )
+        if use_cache and cache_policy == "prefer":
+            cached = self._match_cache(query, book_id, top_k, chunks_total)
+            if cached is not None:
+                return cached
+        if cache_policy == "ignore":
+            use_cache = False
+        results = self.embedding_service.search(
+            query=query, top_k=top_k, book_id=book_id
+        )
+        if use_cache and cache_policy != "ignore":
+            self._store_cache(query, book_id, top_k, chunks_total, results)
+        return results

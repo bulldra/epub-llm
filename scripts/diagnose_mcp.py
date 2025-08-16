@@ -6,12 +6,11 @@ MCP Server 接続問題診断スクリプト
 解決策を提示します。
 """
 
-import sys
+import json
 import os
 import subprocess
-import json
+import sys
 from pathlib import Path
-import importlib.util
 
 
 def check_python_version():
@@ -36,19 +35,20 @@ def check_dependencies():
         "uvicorn",
         "fastapi",
         "mlx_lm",
-        "mlx_embeddings",
+        "mlx",
         "faiss",
+        "requests",
     ]
 
     all_ok = True
     for package in required_packages:
         try:
             if package == "mlx_lm":
-                import mlx_lm
-            elif package == "mlx_embeddings":
-                import mlx_embeddings
+                import mlx_lm  # noqa: F401
+            elif package == "mlx":
+                import mlx.core  # noqa: F401
             elif package == "faiss":
-                import faiss
+                import faiss  # noqa: F401
             else:
                 __import__(package)
             print(f"   ✅ {package}")
@@ -64,13 +64,12 @@ def check_project_structure():
     print("\n📁 プロジェクト構造確認")
 
     required_files = [
-        "src/server.py",
         "src/app.py",
+        "src/mcp_server.py",
         "start_mcp.py",
-        "start_mcp_stable.py",
     ]
 
-    project_root = Path(__file__).parent
+    project_root = Path(__file__).resolve().parents[1]
     all_ok = True
 
     for file_path in required_files:
@@ -127,7 +126,7 @@ def check_claude_config():
             config_found = True
 
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, encoding="utf-8") as f:
                     config = json.load(f)
 
                 if "mcpServers" in config:
@@ -173,7 +172,7 @@ def test_mcp_server():
     """MCP Server テスト起動"""
     print("\n🧪 MCP Server テスト起動")
 
-    project_root = Path(__file__).parent
+    project_root = Path(__file__).resolve().parents[1]
 
     try:
         # 環境変数設定
@@ -183,7 +182,7 @@ def test_mcp_server():
         env["PYTHONUNBUFFERED"] = "1"
 
         # テスト起動（5秒でタイムアウト）
-        cmd = [sys.executable, "start_mcp_stable.py"]
+        cmd = [sys.executable, "start_mcp.py"]
 
         print(f"   コマンド実行: {' '.join(cmd)}")
 
@@ -221,19 +220,19 @@ def provide_solutions():
     print("\n🔧 推奨解決策")
 
     print("1. 依存関係インストール:")
-    print("   pip install fastmcp uvicorn fastapi")
-    print("   pip install mlx-lm mlx-embeddings faiss-cpu")
+    print("   pip install fastmcp uvicorn fastapi requests")
+    print("   pip install mlx-lm mlx faiss-cpu")
 
     print("\n2. Claude Desktop 設定:")
     print("   以下の内容で設定ファイルを作成:")
     print("   ~/Library/Application Support/Claude/claude_desktop_config.json")
 
-    project_root = Path(__file__).parent.absolute()
+    project_root = Path(__file__).resolve().parents[1].absolute()
     config_example = {
         "mcpServers": {
             "epub-llm": {
                 "command": "python3",
-                "args": [str(project_root / "start_mcp_stable.py")],
+                "args": [str(project_root / "start_mcp.py")],
                 "env": {
                     "PYTHONPATH": str(project_root),
                     "DEV_MODE": "true",
@@ -267,7 +266,7 @@ def main():
     ]
 
     all_passed = True
-    for name, check_func in checks:
+    for _name, check_func in checks:
         if not check_func():
             all_passed = False
 

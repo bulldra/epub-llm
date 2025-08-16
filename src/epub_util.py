@@ -7,6 +7,7 @@ including text extraction, cover image processing, and metadata parsing.
 import io
 import logging
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 import ebooklib
@@ -30,19 +31,19 @@ def extract_epub_text(epub_path: str, cache_path: str) -> str:
     Returns:
         The extracted text content as a string.
     """
-    logging.info(
+    logging.debug(
         "extract_epub_text: epub_path=%s, cache_path=%s", epub_path, cache_path
     )
     md_cache_path = os.path.splitext(cache_path)[0] + ".md"
 
     # Check for cached content
     if os.path.exists(md_cache_path):
-        logging.info("extract_epub_text: cache hit %s", md_cache_path)
+        logging.debug("extract_epub_text: cache hit %s", md_cache_path)
         with open(md_cache_path, encoding="utf-8") as f:
             return f.read()
 
     # Extract from EPUB
-    logging.info("extract_epub_text: cache miss, extracting from %s", epub_path)
+    logging.debug("extract_epub_text: cache miss, extracting from %s", epub_path)
     book = epub.read_epub(epub_path)
 
     # Extract content and metadata
@@ -100,7 +101,7 @@ def _save_to_cache(cache_path: str, content: str) -> None:
     """Save content to cache file."""
     with open(cache_path, "w", encoding="utf-8") as f:
         f.write(content)
-    logging.info("extract_epub_text: saved cache to %s", cache_path)
+    logging.debug("extract_epub_text: saved cache to %s", cache_path)
 
 
 def extract_epub_metadata(epub_path: str) -> dict[str, str]:
@@ -127,6 +128,140 @@ def extract_epub_metadata(epub_path: str) -> dict[str, str]:
     except (OSError, ValueError) as e:
         logging.warning("extract_epub_metadata: %s", e)
     return meta
+
+
+def _should_skip_title(title: str) -> bool:
+    """Return True if the TOC title should be skipped."""
+    if len(title) < 2:
+        return True
+
+    skip_titles = {
+        "大扉",
+        "クレジット",
+        "まえがき",
+        "あとがき",
+        "目次",
+        "奥付",
+        "表紙",
+        "裏表紙",
+        "序章",
+        "はじめに",
+        "おわりに",
+        "索引",
+        "Cover",
+        "Credits",
+        "Preface",
+        "Introduction",
+        "Conclusion",
+        "Index",
+        "Table of Contents",
+        "Copyright",
+    }
+
+    if title in skip_titles:
+        return True
+
+    # Skip if title contains only symbols or numbers
+    if not any(c.isalpha() or ord(c) > 127 for c in title):
+        return True
+
+    return False
+
+
+def _is_main_chapter_title(title: str) -> bool:
+    """Check if a title looks like a main chapter (not subsection)."""
+    main_chapter_patterns = [
+        r"^\d+章",
+        r"^第\d+章",
+        r"^Chapter\s+\d+",
+        r"^CHAPTER\s+\d+",
+        r"^\d+\.?\s*[^\.]*$",
+        r"^Part\s+\d+",
+        r"^第\d+部",
+    ]
+
+    if any(
+        re.match(pattern, title, re.IGNORECASE) for pattern in main_chapter_patterns
+    ):
+        # Additional check: skip subsections (containing multiple dots/numbers)
+        if "." in title and len(re.findall(r"\d+\.", title)) > 1:
+            return False
+        return True
+    return False
+
+
+def _collect_level1_children(item: Any, level: int) -> list[dict[str, Any]]:
+    """Collect level-1 children entries for a TOC item if present."""
+    children: list[dict[str, Any]] = []
+    for child in item:
+        if hasattr(child, "title"):
+            child_entry = _process_toc_item_filtered(child, level + 1)
+            if child_entry:
+                children.append(child_entry)
+    return children
+
+
+def _process_toc_item_filtered(item: Any, level: int = 0) -> dict[str, Any] | None:
+    """Process a single TOC item with filtering and limited depth."""
+    if level > 1:
+        return None
+
+    if hasattr(item, "title"):
+        title = item.title.strip()
+        if _should_skip_title(title) or not _is_main_chapter_title(title):
+            return None
+
+        toc_entry: dict[str, Any] = {"title": title, "level": level}
+
+        # Only collect one level of children
+        if level == 0 and hasattr(item, "__iter__") and not isinstance(item, str):
+            try:
+                children = _collect_level1_children(item, level)
+                if children:
+                    toc_entry["children"] = children
+            except (TypeError, AttributeError):
+                pass
+        return toc_entry
+
+    if isinstance(item, list | tuple) and len(item) >= 2 and hasattr(item[0], "title"):
+        child_entry = _process_toc_item_filtered(item[0], level)
+        if child_entry and level <= 1 and level == 0 and item[1]:
+            children = []
+            for child in item[1]:
+                processed_child = _process_toc_item_filtered(child, level + 1)
+                if processed_child:
+                    children.append(processed_child)
+            if children:
+                child_entry["children"] = children
+        return child_entry
+
+    return None
+
+
+def extract_epub_toc(epub_path: str) -> list[dict[str, Any]]:
+    """Extract table of contents from an EPUB file, limited to chapter-level titles.
+
+    Args:
+        epub_path: Path to the EPUB file.
+
+    Returns:
+        List of dictionaries containing TOC entries with title and level,
+        filtered to include only chapter-level content (levels 0-1).
+    """
+    toc_list: list[dict[str, Any]] = []
+    try:
+        book = epub.read_epub(epub_path)
+        toc = book.toc
+        if toc:
+            for item in toc:
+                processed_item = _process_toc_item_filtered(item)
+                if processed_item:
+                    toc_list.append(processed_item)
+
+    except (OSError, ValueError, AttributeError) as e:
+        logging.warning("extract_epub_toc error for %s: %s", epub_path, e)
+
+    return toc_list
 
 
 def get_epub_cover_path(epub_path: str, cache_dir: str) -> str | None:

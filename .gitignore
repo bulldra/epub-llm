@@ -8,6 +8,23 @@ post/
 epub/
 cache/
 
+# macOS
+.DS_Store
+
+# Secrets and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.der
+id_rsa
+id_ed25519
+id_ecdsa
+known_hosts
+ssh_config
+
 # EPUB-LLM Project Specific
 .server.pid
 *.pid
@@ -141,12 +158,23 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+*.env
+.envrc
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Local/private config overlays
+config/*local*.yaml
+config/*local*.yml
+config/*secret*.yaml
+config/*secret*.yml
+config/*private*.yaml
+config/*private*.yml
 
 # Spyder project settings
 .spyderproject

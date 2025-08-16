@@ -29,6 +29,21 @@
 				align-items: center;
 				gap: 12px;
 				margin-bottom: 24px;
+				flex-wrap: wrap;
+			}
+			.mcp-setup-btn {
+				background: #28a745;
+				color: #fff;
+				border: none;
+				border-radius: 6px;
+				padding: 8px 18px;
+				font-size: 1rem;
+				cursor: pointer;
+				text-decoration: none;
+				display: inline-block;
+			}
+			.mcp-setup-btn:hover {
+				background: #218838;
 			}
 			.upload-form input[type='file'] {
 				color: #d9d9d9;
@@ -105,6 +120,7 @@
 		</style>
 	</head>
 	<body>
+		{% include 'partials/header.html' %}
 		<div class="bookshelf-container">
 			<div class="bookshelf-title">本棚</div>
 			<form
